@@ -46,6 +46,8 @@ npm start
 | `NEON_AUTH_COOKIE_SECRET` | gerado local (≥32 chars) | assina o cookie de sessão |
 | `CRON_SECRET` | gerado local | autentica a rota de cron |
 | `ALLOW_PRIVATE_HOSTS` | opcional | `1` libera Local WP / intranet |
+| `DATABASE_URL_MCP` | `npm run db:reader` | role somente-leitura; exigida pelo MCP (local e remoto) |
+| `DASH_F2F_OWNER_EMAIL` | manual | conta exposta pelo MCP **local** (o remoto usa o token) |
 
 Na Vercel: replique todas, exceto `ALLOW_PRIVATE_HOSTS`. `CRON_SECRET` é enviado
 automaticamente pela plataforma como `Authorization: Bearer …` nas invocações de
@@ -170,20 +172,29 @@ Nenhuma delas derruba a aplicação, e todas ficam registradas no histórico.
 
 ## MCP (somente leitura)
 
-`mcp/` traz um servidor MCP que expõe a um agente os sites da conta e o
-histórico de varreduras, lendo o banco com uma role `dash_f2f_reader` que só tem
-`GRANT SELECT`:
+O painel expõe seus sites a um assistente por MCP, em dois transportes que
+compartilham as mesmas ferramentas e a mesma conexão somente-leitura:
+
+- **Conector remoto** — gere a URL em `/conectores` e cole no Claude, no ChatGPT
+  ou em qualquer cliente MCP:
+  `https://dash-f2f.vercel.app/api/mcp?token=dashf2f_…`.
+  O token identifica a conta, é revogável na mesma tela e registra o último uso.
+- **Servidor local (stdio)** — `mcp/`, para Claude Code, Cursor e VS Code.
+
+Ambos leem o banco com a role `dash_f2f_reader`, que só tem `GRANT SELECT`:
 
 ```bash
 npm run db:reader     # cria a role e grava DATABASE_URL_MCP no .env.local
 npm run mcp:build
-npm run mcp:test      # 19 testes: isolamento por dono, negação de escrita, handshake real
+npm run mcp:test      # 20 testes: isolamento por dono, negação de escrita, handshake real
 ```
 
 Oito ferramentas (`list_sites`, `get_site_status`, `list_outdated`,
 `get_scan_history`, `diff_scans`, `find_plugin`, `fleet_summary`,
 `list_failing_sites`), todas escopadas ao usuário de `DASH_F2F_OWNER_EMAIL`.
-Detalhes em [`mcp/README.md`](./mcp/README.md).
+
+- **Conectar ao seu agente:** [`docs/conectar-mcp.md`](./docs/conectar-mcp.md)
+- **Como funciona por dentro:** [`mcp/README.md`](./mcp/README.md)
 
 ## Design
 

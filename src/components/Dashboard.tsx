@@ -3,6 +3,7 @@
 // Dashboard interativo: dispara consultas, troca de site e aplica filtros.
 // Os sites vêm do servidor (Postgres); add/remove passam por Server Actions.
 
+import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
 import { addSiteAction, removeSiteAction, signOutAction } from '@/app/actions';
 import { SiteForm } from '@/components/SiteForm';
@@ -95,6 +96,7 @@ export function Dashboard({ sites, user }: Props) {
         </div>
         <div className="topbar-right">
           <span className="ro"><i /> somente leitura · GET</span>
+          <Link className="ghost" href="/conectores">Conector MCP</Link>
           <form action={signOutAction}>
             <button className="ghost" type="submit" title={user.email}>
               {user.name} · sair

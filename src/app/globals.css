@@ -194,6 +194,29 @@ body {
 .stat.hot b { color: var(--stamp); }
 .stat.ok b { color: var(--moss); }
 
+/* ── página do conector MCP ───────────────────────────────────────────── */
+.conn { max-width: 860px; margin: 0 auto; padding: 32px 28px 56px; display: flex; flex-direction: column; gap: 28px; }
+.conn-head h2 { font-size: 24px; font-weight: 700; letter-spacing: -.02em; margin: 8px 0 10px; }
+.conn-head p { font-size: 13.5px; line-height: 1.65; color: var(--ink2); max-width: 62ch; }
+.conn-head strong { color: var(--ink); font-weight: 500; }
+.conn-form { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+.conn-form > div { flex: 1; min-width: 220px; }
+.conn-form label { display: block; margin-bottom: 8px; }
+.conn-fresh { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line); }
+.conn-fresh-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; gap: 12px; }
+.conn-url {
+  display: block; padding: 12px 14px; font-size: 12.5px; line-height: 1.6; word-break: break-all;
+  background: var(--stamp-soft); border: 1px solid var(--stamp); border-radius: 3px; color: #8E2B12;
+}
+.conn-warn { margin-top: 10px; font-size: 11.5px; line-height: 1.6; color: var(--ink2); }
+.conn-section-title { margin-bottom: 12px; }
+.conn-clients { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+.conn-client { background: var(--card); padding: 15px 16px; }
+.conn-client b { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; }
+.conn-client p { font-size: 11.5px; line-height: 1.6; color: var(--ink2); }
+.conn-foot p { font-size: 12.5px; line-height: 1.65; color: var(--ink2); max-width: 62ch; }
+a.ghost { display: inline-flex; align-items: center; text-decoration: none; }
+
 /* ── changelog (diff entre varreduras) ────────────────────────────────── */
 .changelog-none { font-size: 12px; color: var(--ink2); margin-bottom: 18px; }
 .changelog {

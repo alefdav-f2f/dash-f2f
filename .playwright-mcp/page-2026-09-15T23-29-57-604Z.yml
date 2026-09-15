@@ -1,0 +1,43 @@
+- generic [active] [ref=f1e1]:
+  - banner [ref=f1e2]:
+    - generic [ref=f1e3]:
+      - generic [ref=f1e4]: f2
+      - heading "dash-f2f" [level=1] [ref=f1e5]
+      - generic [ref=f1e6]: · conector MCP
+    - generic [ref=f1e7]:
+      - generic [ref=f1e8]: somente leitura · GET
+      - link "Voltar ao painel" [ref=f1e10] [cursor=pointer]:
+        - /url: /
+  - main [ref=f1e11]:
+    - generic [ref=f1e12]:
+      - generic [ref=f1e13]: Conector MCP
+      - heading "Ligue seus sites a um assistente" [level=2] [ref=f1e14]
+      - paragraph [ref=f1e15]:
+        - text: Gere uma URL e cole no Claude, no ChatGPT ou em qualquer cliente MCP. O assistente passa a responder sobre os seus sites — quais plugins estão desatualizados, o que mudou na última varredura, quem parou de responder.
+        - strong [ref=f1e16]: Somente leitura
+        - text: ": nada é alterado no painel nem nos WordPress."
+    - generic [ref=f1e18]:
+      - generic [ref=f1e19]:
+        - generic [ref=f1e20]: Nome do conector
+        - textbox "Nome do conector" [ref=f1e21]:
+          - /placeholder: Claude do notebook
+      - button "Gerar URL do conector" [ref=f1e22] [cursor=pointer]
+    - generic [ref=f1e23]:
+      - generic [ref=f1e24]: Onde colar
+      - generic [ref=f1e25]:
+        - generic [ref=f1e26]:
+          - generic [ref=f1e27]: Claude (app e web)
+          - paragraph [ref=f1e28]: Configurações → Conectores → Adicionar conector personalizado → cole a URL.
+        - generic [ref=f1e29]:
+          - generic [ref=f1e30]: ChatGPT
+          - paragraph [ref=f1e31]: Configurações → Conectores (modo desenvolvedor) → Novo conector → cole a URL.
+        - generic [ref=f1e32]:
+          - generic [ref=f1e33]: Claude Code / Cursor
+          - paragraph [ref=f1e34]: claude mcp add --transport http dash-f2f "<URL>"
+    - generic [ref=f1e35]:
+      - generic [ref=f1e36]: Conectores ativos · 0
+      - paragraph [ref=f1e37]: Nenhum conector gerado ainda.
+    - generic [ref=f1e38]:
+      - generic [ref=f1e39]: O que o assistente consegue ver
+      - paragraph [ref=f1e40]: "Os sites cadastrados nesta conta, o inventário de plugins de cada varredura, o histórico e as diferenças entre varreduras. Nada além disso: a conexão com o banco usa um usuário que só tem permissão de leitura, as consultas são fixas e o assistente não escreve SQL."
+  - button "Open Next.js Dev Tools" [ref=f1e46] [cursor=pointer]

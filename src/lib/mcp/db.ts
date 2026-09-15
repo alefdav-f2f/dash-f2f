@@ -1,26 +1,32 @@
-// Conexão do MCP com o banco do dash-f2f.
+// Conexão somente-leitura compartilhada pelos dois transportes do MCP
+// (stdio local e HTTP remoto em /api/mcp).
 //
-// Usa DATABASE_URL_MCP — a connection string da role `dash_f2f_reader`, que tem
-// GRANT SELECT e nada mais. Mesmo um bug aqui não consegue escrever.
+// Usa DATABASE_URL_MCP — a string da role `dash_f2f_reader`, que só tem
+// GRANT SELECT. Nunca cai para a DATABASE_URL do app: sem a role, o MCP não sobe.
+//
+// Sem `server-only` de propósito: este módulo também roda fora do Next, no
+// servidor stdio.
 
 import { neon, type NeonQueryFunction } from '@neondatabase/serverless';
 
 let cached: NeonQueryFunction<false, false> | null = null;
+
+export class ReaderUnavailableError extends Error {}
 
 export function db(): NeonQueryFunction<false, false> {
   if (cached) return cached;
 
   const url = process.env.DATABASE_URL_MCP;
   if (!url) {
-    throw new Error(
-      'DATABASE_URL_MCP ausente. Rode `npm run db:reader` no projeto e aponte a env do MCP para essa string (a do usuário somente-leitura, nunca a DATABASE_URL do app).',
+    throw new ReaderUnavailableError(
+      'DATABASE_URL_MCP ausente. Rode `npm run db:reader` e configure essa variável (a do usuário somente-leitura, nunca a DATABASE_URL do app).',
     );
   }
   cached = neon(url);
   return cached;
 }
 
-/** Resolve o e-mail configurado para o `owner_id` usado em todas as queries. */
+/** Resolve o e-mail para o `owner_id` usado em todas as queries. */
 export async function resolveOwnerId(email: string): Promise<string> {
   const sql = db();
   const rows = (await sql`

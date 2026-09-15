@@ -2,11 +2,7 @@
   "mcpServers": {
     "dash-f2f": {
       "command": "node",
-      "args": ["./mcp/dist/mcp/src/server.js"],
-      "env": {
-        "DATABASE_URL_MCP": "${DATABASE_URL_MCP}",
-        "DASH_F2F_OWNER_EMAIL": "${DASH_F2F_OWNER_EMAIL}"
-      }
+      "args": ["./mcp/dist/mcp/src/server.js"]
     }
   }
 }

@@ -10,7 +10,8 @@
     "db:migrate": "node --env-file=.env.local scripts/migrate.mjs",
     "db:reader": "node --env-file=.env.local scripts/setup-reader-role.mjs",
     "mcp:build": "tsc -p mcp/tsconfig.json",
-    "mcp:test": "npm run mcp:build && node --env-file=.env.local --test mcp/test/*.test.mjs"
+    "mcp:test": "npm run mcp:build && node --env-file=.env.local --test mcp/test/isolation.test.mjs mcp/test/readonly.test.mjs mcp/test/smoke.test.mjs",
+    "mcp:test:remote": "node --env-file=.env.local --test mcp/test/remote.test.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",

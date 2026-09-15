@@ -8,8 +8,8 @@ import { createRequire } from 'node:module';
 import { neon } from '@neondatabase/serverless';
 
 const require = createRequire(import.meta.url);
-const q = require('../dist/mcp/src/queries.js');
-const { resolveOwnerId } = require('../dist/mcp/src/db.js');
+const q = require('../dist/src/lib/mcp/queries.js');
+const { resolveOwnerId } = require('../dist/src/lib/mcp/db.js');
 
 const admin = neon(process.env.DATABASE_URL);
 

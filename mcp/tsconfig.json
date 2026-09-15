@@ -3,7 +3,7 @@
     "target": "ES2022",
     "lib": ["ES2022"],
     "module": "commonjs",
-    "moduleResolution": "node",
+    "moduleResolution": "node10",
     "rootDir": "..",
     "outDir": "dist",
     "strict": true,
@@ -14,6 +14,7 @@
   },
   "include": [
     "src/**/*.ts",
+    "../src/lib/mcp/**/*.ts",
     "../src/lib/diff.ts",
     "../src/lib/plugins.ts",
     "../src/lib/site-url.ts",

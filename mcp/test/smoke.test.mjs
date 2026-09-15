@@ -25,12 +25,12 @@ const EXPECTED_TOOLS = [
   'list_sites',
 ];
 
-async function connect() {
+async function connect(env = undefined) {
   const client = new Client({ name: 'dash-f2f-smoke', version: '1.0.0' });
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: [serverEntry],
-    env: {
+    env: env ?? {
       ...process.env,
       DATABASE_URL_MCP: process.env.DATABASE_URL_MCP,
       DASH_F2F_OWNER_EMAIL: process.env.DASH_F2F_OWNER_EMAIL,
@@ -65,6 +65,20 @@ test('fleet_summary devolve números coerentes', async (t) => {
   assert.equal(typeof data.sites, 'number');
   assert.ok(data.sites >= 0);
   assert.ok(data.sites_with_outdated <= data.sites);
+});
+
+test('sobe sem env do cliente, lendo o .env.local do projeto', async (t) => {
+  // É assim que Claude Code / Desktop / Cursor sobem o servidor quando a config
+  // não declara bloco `env`: nenhuma das duas variáveis chega pelo ambiente.
+  const semEnv = { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot };
+  const client = await connect(semEnv);
+  t.after(() => client.close());
+
+  const { tools } = await client.listTools();
+  assert.equal(tools.length, EXPECTED_TOOLS.length);
+
+  const res = await client.callTool({ name: 'fleet_summary', arguments: {} });
+  assert.ok(!res.isError, 'fleet_summary deveria responder mesmo sem env do cliente');
 });
 
 test('tool recusa site que não é da conta', async (t) => {

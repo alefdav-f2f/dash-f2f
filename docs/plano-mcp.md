@@ -15,7 +15,16 @@ Status: **implementado em 2026-09-15** (fases 0 a 4). Documentação de uso em
   branch atual, verificam o isolamento e limpam no `after`. Um branch dedicado
   passa a valer a pena quando houver CI.
 
-A fase 5 (MCP remoto multiusuário) continua pendente — depende do deploy.
+**A fase 5 também saiu** (mesmo dia): `/api/mcp` serve o mesmo conjunto de
+ferramentas por HTTP, autenticado por token pessoal (`api_tokens`, sha256 no
+banco). A tela `/conectores` gera a URL pronta para colar no Claude, no ChatGPT e
+afins, lista os conectores ativos com último uso e revoga. O `owner_id` sai do
+token, não de env var — que era o ponto da fase.
+
+Diferença em relação ao previsto: o plano falava em OAuth como caminho natural;
+ficou token na URL (ou `Authorization: Bearer`), porque é o que funciona em
+cliente que só aceita colar endereço. Clientes que exigem OAuth ainda não são
+atendidos.
 
 ---
 

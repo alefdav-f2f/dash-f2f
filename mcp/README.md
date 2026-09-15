@@ -3,6 +3,11 @@
 Servidor MCP (stdio) que expõe, para um agente, os sites monitorados no dash-f2f
 e o histórico de varreduras de plugins — **somente leitura**.
 
+As ferramentas vivem em `src/lib/mcp/tools.ts`, compartilhadas com o conector
+remoto (`/api/mcp`, autenticado por token gerado em `/conectores`). Este pacote
+é só o transporte stdio: resolve a conta por `DASH_F2F_OWNER_EMAIL` e liga o
+servidor à entrada/saída padrão.
+
 ## Garantia de somente leitura
 
 Três camadas independentes:
@@ -26,6 +31,9 @@ dados de outra conta (coberto por teste de isolamento).
 O e-mail precisa existir em `app_users`, tabela preenchida no primeiro acesso
 autenticado ao painel.
 
+> **Como conectar em Claude Code, Claude Desktop, Cursor ou VS Code:**
+> [`docs/conectar-mcp.md`](../docs/conectar-mcp.md).
+
 ## Configuração
 
 ```bash
@@ -33,7 +41,7 @@ npm install
 npm run db:migrate    # cria as tabelas, inclusive app_users
 npm run db:reader     # cria a role read-only e grava DATABASE_URL_MCP no .env.local
 npm run mcp:build     # compila para mcp/dist
-npm run mcp:test      # 19 testes: isolamento, negação de escrita e handshake real
+npm run mcp:test      # 20 testes: isolamento, negação de escrita e handshake real
 ```
 
 Depois adicione o e-mail da conta no `.env.local`:
@@ -42,18 +50,11 @@ Depois adicione o e-mail da conta no `.env.local`:
 DASH_F2F_OWNER_EMAIL=voce@exemplo.com
 ```
 
-O `.mcp.json` na raiz do repo já aponta para o build. Em outros clientes:
-
-```json
-{
-  "command": "node",
-  "args": ["/caminho/para/dash-f2f/mcp/dist/mcp/src/server.js"],
-  "env": {
-    "DATABASE_URL_MCP": "postgres://dash_f2f_reader:…",
-    "DASH_F2F_OWNER_EMAIL": "voce@exemplo.com"
-  }
-}
-```
+O `.mcp.json` na raiz do repo já aponta para o build e **não declara credencial**:
+o servidor lê o `.env.local` do projeto sozinho (subindo diretórios a partir do
+build), porque nenhum cliente MCP lê arquivos `.env`. Variável já presente no
+ambiente sempre vence, então declarar `env` na config continua servindo para
+apontar outra conta ou outro banco.
 
 > Use **sempre** a string da role read-only. A `DATABASE_URL` do app tem
 > permissão de escrita e não deve chegar ao MCP.
@@ -78,10 +79,14 @@ Cada resposta traz um resumo em texto e o JSON completo.
 ```
 mcp/
 ├─ bin/dash-f2f-mcp.cjs   entrada (esconde o caminho do build)
-├─ src/server.ts          registro das tools + transporte stdio
-├─ src/queries.ts         SQL, sempre com owner_id
-├─ src/db.ts              conexão read-only + resolveOwnerId
-└─ test/                  isolamento · negação de escrita · handshake
+├─ src/server.ts          transporte stdio
+├─ src/env.ts             carrega o .env.local do projeto
+└─ test/                  isolamento · negação de escrita · handshake · conector remoto
+
+src/lib/mcp/              compartilhado com /api/mcp
+├─ tools.ts               as 8 ferramentas
+├─ queries.ts             SQL, sempre com owner_id
+└─ db.ts                  conexão read-only + resolveOwnerId
 ```
 
 O build espelha a árvore do repo (`dist/mcp/src/…` e `dist/src/lib/…`) porque o

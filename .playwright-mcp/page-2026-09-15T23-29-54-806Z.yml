@@ -1,0 +1,121 @@
+- generic [active] [ref=e1]:
+  - button "Open Next.js Dev Tools" [ref=e21] [cursor=pointer]
+  - alert [ref=e25]: dash-f2f
+  - banner [ref=e26]:
+    - generic [ref=e27]:
+      - generic [ref=e28]: f2
+      - heading "dash-f2f" [level=1] [ref=e29]
+      - generic [ref=e30]: · monitor de plugins WordPress
+    - generic [ref=e31]:
+      - generic [ref=e32]: somente leitura · GET
+      - link "Conector MCP" [ref=e34] [cursor=pointer]:
+        - /url: /conectores
+      - button "Alef Coelho · sair" [ref=e36] [cursor=pointer]
+  - generic [ref=e37]:
+    - complementary [ref=e38]:
+      - generic [ref=e39]:
+        - generic [ref=e40]: Adicionar site
+        - textbox "Adicionar site" [ref=e41]:
+          - /placeholder: https://exemplo.com
+        - button "Adicionar e consultar" [ref=e42] [cursor=pointer]
+      - generic [ref=e43]:
+        - generic [ref=e44]:
+          - generic [ref=e45]: Sites salvos · 1
+          - generic [ref=e46]: nº = desatualizados
+        - button "doppio.homolog-f2f-digital.xyz 2" [ref=e49] [cursor=pointer]:
+          - generic [ref=e51]: doppio.homolog-f2f-digital.xyz
+          - generic [ref=e52]: "2"
+      - generic [ref=e53]:
+        - generic [ref=e54]: Legenda de status
+        - generic [ref=e55]: Ativo (desatualizado)
+        - generic [ref=e57]: Ativo
+        - generic [ref=e59]: Inativo (desatualizado)
+        - generic [ref=e61]: Inativo
+      - generic [ref=e63]: O painel só faz GET em/wp-json/site-status/v1/plugins.Nenhuma escrita no WordPress.
+    - main [ref=e64]:
+      - generic [ref=e65]:
+        - generic [ref=e66]:
+          - generic [ref=e67]: Consultando
+          - generic [ref=e68]: doppio.homolog-f2f-digital.xyz
+        - generic [ref=e69]:
+          - generic [ref=e70]: atualizado agora mesmo
+          - button "Recarregar" [ref=e71] [cursor=pointer]
+      - generic [ref=e72]:
+        - generic [ref=e73]:
+          - generic [ref=e74]: "07"
+          - text: Plugins
+        - generic [ref=e75]:
+          - generic [ref=e76]: "05"
+          - text: Ativos
+        - generic [ref=e77]:
+          - generic [ref=e78]: "02"
+          - text: Desatualizados
+        - generic [ref=e79]:
+          - generic [ref=e80]: "02"
+          - text: Inativos
+      - paragraph [ref=e81]: Nada mudou desde a varredura de 15/09, 20:29.
+      - generic [ref=e82]:
+        - generic [ref=e83]:
+          - generic [ref=e84]:
+            - button "Todos · 7" [pressed] [ref=e85] [cursor=pointer]
+            - button "Desatualizados · 2" [ref=e86] [cursor=pointer]
+            - button "Ativos · 5" [ref=e87] [cursor=pointer]
+            - button "Inativos · 2" [ref=e88] [cursor=pointer]
+          - generic [ref=e89]: exibindo 7 de 7
+        - table [ref=e90]:
+          - rowgroup [ref=e91]:
+            - row [ref=e92]:
+              - columnheader "Plugin" [ref=e93]
+              - columnheader "Versão atual" [ref=e94]
+              - columnheader "Nova versão" [ref=e95]
+              - columnheader "Status" [ref=e96]
+          - rowgroup [ref=e97]:
+            - row [ref=e98]:
+              - 'cell "Akismet Anti-spam: Spam Protection akismet/akismet.php" [ref=e99]':
+                - generic [ref=e100]: "Akismet Anti-spam: Spam Protection"
+                - generic [ref=e101]: akismet/akismet.php
+              - cell "5.6" [ref=e102]
+              - cell "5.7.2" [ref=e103]
+              - cell "Inativo (desatualizado)" [ref=e104]
+            - row [ref=e106]:
+              - cell "All-in-One WP Migration all-in-one-wp-migration-unlimited/all-in-one-wp-migration.php" [ref=e107]:
+                - generic [ref=e108]: All-in-One WP Migration
+                - generic [ref=e109]: all-in-one-wp-migration-unlimited/all-in-one-wp-migration.php
+              - cell "6.77" [ref=e110]
+              - cell "—" [ref=e111]
+              - cell "Ativo" [ref=e112]
+            - row [ref=e114]:
+              - cell "Classic Editor classic-editor/classic-editor.php" [ref=e115]:
+                - generic [ref=e116]: Classic Editor
+                - generic [ref=e117]: classic-editor/classic-editor.php
+              - cell "1.7.0" [ref=e118]
+              - cell "—" [ref=e119]
+              - cell "Ativo" [ref=e120]
+            - row [ref=e122]:
+              - cell "Hello Dolly hello.php" [ref=e123]:
+                - generic [ref=e124]: Hello Dolly
+                - generic [ref=e125]: hello.php
+              - cell "1.7.2" [ref=e126]
+              - cell "—" [ref=e127]
+              - cell "Inativo" [ref=e128]
+            - row [ref=e130]:
+              - cell "LiteSpeed Cache litespeed-cache/litespeed-cache.php" [ref=e131]:
+                - generic [ref=e132]: LiteSpeed Cache
+                - generic [ref=e133]: litespeed-cache/litespeed-cache.php
+              - cell "7.9.1" [ref=e134]
+              - cell "—" [ref=e135]
+              - cell "Ativo" [ref=e136]
+            - row [ref=e138]:
+              - cell "Migrate Guru migrate-guru/migrateguru.php" [ref=e139]:
+                - generic [ref=e140]: Migrate Guru
+                - generic [ref=e141]: migrate-guru/migrateguru.php
+              - cell "6.72" [ref=e142]
+              - cell "—" [ref=e143]
+              - cell "Ativo" [ref=e144]
+            - row [ref=e146]:
+              - cell "Secure Custom Fields secure-custom-fields/secure-custom-fields.php" [ref=e147]:
+                - generic [ref=e148]: Secure Custom Fields
+                - generic [ref=e149]: secure-custom-fields/secure-custom-fields.php
+              - cell "6.8.6" [ref=e150]
+              - cell "6.9.5" [ref=e151]
+              - cell "Ativo (desatualizado)" [ref=e152]

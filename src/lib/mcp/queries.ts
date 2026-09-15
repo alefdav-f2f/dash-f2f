@@ -3,7 +3,7 @@
 // argumento e filtra por ele.
 
 import { db } from './db';
-import type { Plugin } from '../../src/lib/types';
+import type { Plugin } from '../types';
 
 export type SiteRow = {
   id: string;
