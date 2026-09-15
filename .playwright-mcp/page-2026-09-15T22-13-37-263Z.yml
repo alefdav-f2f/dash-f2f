@@ -1,0 +1,14 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e6] [cursor=pointer]:
+    - button "Open Next.js Dev Tools" [ref=e7]
+    - generic [ref=e11]:
+      - button "Open issues overlay" [ref=e12]:
+        - generic [ref=e13]:
+          - generic [aria-hidden] [ref=e14]: "-1"
+          - generic [ref=e15]: "0"
+      - button "Collapse issues badge" [ref=e16]
+  - generic [ref=e20]:
+    - heading "This page couldn’t load" [level=1] [ref=e23]
+    - paragraph [ref=e24]: A server error occurred. Reload to try again.
+    - button "Reload" [ref=e27] [cursor=pointer]
+  - paragraph [ref=e28]: ERROR 3005430653@E1180

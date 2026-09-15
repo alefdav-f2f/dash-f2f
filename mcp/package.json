@@ -1,0 +1,10 @@
+{
+  "name": "dash-f2f-mcp",
+  "version": "1.0.0",
+  "private": true,
+  "description": "MCP somente leitura sobre o banco do dash-f2f: sites e varreduras de plugins WordPress por usuário.",
+  "bin": {
+    "dash-f2f-mcp": "./bin/dash-f2f-mcp.cjs"
+  },
+  "files": ["bin", "dist"]
+}

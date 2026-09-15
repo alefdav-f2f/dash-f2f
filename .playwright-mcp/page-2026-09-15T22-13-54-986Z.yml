@@ -1,0 +1,51 @@
+- generic [ref=f1e1]:
+  - generic [active]:
+    - generic [ref=f1e4]:
+      - generic [ref=f1e5]:
+        - navigation [ref=f1e7]:
+          - button [disabled] [ref=f1e8]:
+            - img "previous" [ref=f1e9]
+          - generic [ref=f1e11]:
+            - generic [ref=f1e12]: 1/
+            - generic [ref=f1e13]: "1"
+          - button [disabled] [ref=f1e14]:
+            - img "next" [ref=f1e15]
+        - generic [ref=f1e18]:
+          - generic "Latest available version is detected (16.3.5)." [ref=f1e21]: Next.js 16.3.5
+          - generic [ref=f1e22]: Turbopack
+      - dialog "Runtime Error" [ref=f1e24]:
+        - generic [ref=f1e29]:
+          - generic [ref=f1e30]:
+            - generic [ref=f1e31]:
+              - generic [ref=f1e32]: Runtime Error
+              - generic [ref=f1e33]: Server
+            - generic [ref=f1e34]:
+              - button "Copy Error Info" [ref=f1e35] [cursor=pointer]
+              - link "Go to related documentation" [ref=f1e38] [cursor=pointer]:
+                - /url: https://nextjs.org/docs/app/api-reference/functions/cookies#options
+              - button "Attach Node.js inspector" [ref=f1e41] [cursor=pointer]
+          - generic [ref=f1e51]:
+            - text: "Cookies can only be modified in a Server Action or Route Handler. Read more:"
+            - link "https://nextjs.org/docs/app/api-reference/functions/cookies#options" [ref=f1e52] [cursor=pointer]:
+              - /url: https://nextjs.org/docs/app/api-reference/functions/cookies#options
+      - contentinfo [ref=f1e54]:
+        - region "Error feedback" [ref=f1e55]:
+          - paragraph [ref=f1e56]:
+            - link "Was this helpful?" [ref=f1e57] [cursor=pointer]:
+              - /url: https://nextjs.org/telemetry#error-feedback
+          - button "Mark as helpful" [ref=f1e58] [cursor=pointer]
+          - button "Mark as not helpful" [ref=f1e62] [cursor=pointer]
+    - generic [ref=f1e69] [cursor=pointer]:
+      - button "Open Next.js Dev Tools" [ref=f1e70]
+      - generic [ref=f1e74]:
+        - button "Open issues overlay" [ref=f1e75]:
+          - generic [ref=f1e76]:
+            - generic [aria-hidden] [ref=f1e77]: "0"
+            - generic [ref=f1e78]: "1"
+          - generic [ref=f1e79]: Issue
+        - button "Collapse issues badge" [ref=f1e80]
+  - generic [ref=f1e84]:
+    - heading "This page couldn’t load" [level=1] [ref=f1e87]
+    - paragraph [ref=f1e88]: A server error occurred. Reload to try again.
+    - button "Reload" [ref=f1e91] [cursor=pointer]
+  - paragraph [ref=f1e92]: ERROR 2746420211@E1180
