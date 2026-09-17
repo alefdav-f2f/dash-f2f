@@ -28,7 +28,7 @@ export default async function SignInPage({
     <main className="auth-shell">
       <div className="auth-card">
         <div className="brand auth-brand">
-          <span className="mark">f2</span>
+          <span className="mark">F2</span>
           <h1>dash-f2f</h1>
         </div>
         <p className="auth-sub">Monitor somente leitura dos plugins dos seus sites WordPress.</p>

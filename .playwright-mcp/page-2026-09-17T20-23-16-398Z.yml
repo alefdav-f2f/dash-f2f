@@ -1,0 +1,35 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]:
+      - generic [ref=e4]: F2
+      - heading "dash-f2f" [level=1] [ref=e5]
+      - generic [ref=e6]: /monitor de plugins WordPress
+    - generic [ref=e7]:
+      - generic [ref=e8]: somente leitura
+      - link "Conector MCP" [ref=e10] [cursor=pointer]:
+        - /url: /conectores
+      - button "Alef Coelho · sair" [ref=e12] [cursor=pointer]
+  - generic [ref=e13]:
+    - complementary [ref=e14]:
+      - generic [ref=e15]:
+        - generic [ref=e16]: Adicionar site
+        - textbox "Adicionar site" [ref=e17]:
+          - /placeholder: https://exemplo.com
+        - button "Adicionar e consultar" [ref=e18] [cursor=pointer]
+      - generic [ref=e19]:
+        - generic [ref=e20]:
+          - generic [ref=e21]: Sites salvos · 1
+          - generic [ref=e22]: pendências
+        - button "doppio.homolog-f2f-digital.xyz 2" [ref=e25] [cursor=pointer]:
+          - generic [ref=e27]: doppio.homolog-f2f-digital.xyz
+          - generic [ref=e28]: "2"
+      - generic [ref=e29]: O painel só faz GET em/wp-json/site-status/v1/plugins.Nenhuma escrita no WordPress.
+    - main [ref=e30]:
+      - generic [ref=e31]:
+        - generic [ref=e32]:
+          - generic [ref=e33]: Consultando
+          - generic [ref=e34]: —
+        - button "Recarregar" [disabled] [ref=e36]
+      - generic [ref=e38]:
+        - heading "Escolha um site" [level=3] [ref=e43]
+        - paragraph [ref=e44]: Clique em um site da lista para ver o inventário de plugins dele.

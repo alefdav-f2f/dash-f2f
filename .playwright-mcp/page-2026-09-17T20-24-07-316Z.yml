@@ -1,0 +1,40 @@
+- generic [active] [ref=f3e1]:
+  - banner [ref=f3e2]:
+    - generic [ref=f3e3]:
+      - generic [ref=f3e4]: F2
+      - heading "dash-f2f" [level=1] [ref=f3e5]
+      - generic [ref=f3e6]: /monitor de plugins WordPress
+    - generic [ref=f3e7]:
+      - generic [ref=f3e8]: somente leitura
+      - link "Conector MCP" [ref=f3e10] [cursor=pointer]:
+        - /url: /conectores
+      - button "Alef Coelho · sair" [ref=f3e12] [cursor=pointer]
+  - generic [ref=f3e13]:
+    - complementary [ref=f3e14]:
+      - generic [ref=f3e15]:
+        - generic [ref=f3e16]: Adicionar site
+        - textbox "Adicionar site" [ref=f3e17]:
+          - /placeholder: https://exemplo.com
+        - button "Consultando…" [disabled] [ref=f3e18]
+      - generic [ref=f3e19]:
+        - generic [ref=f3e20]:
+          - generic [ref=f3e21]: Sites salvos · 1
+          - generic [ref=f3e22]: pendências
+        - button "doppio.homolog-f2f-digital.xyz 2" [ref=f3e25] [cursor=pointer]:
+          - generic [ref=f3e27]: doppio.homolog-f2f-digital.xyz
+          - generic [ref=f3e28]: "2"
+      - generic [ref=f3e29]: O painel só faz GET em/wp-json/site-status/v1/plugins.Nenhuma escrita no WordPress.
+    - main [ref=f3e30]:
+      - generic [ref=f3e31]:
+        - generic [ref=f3e32]:
+          - generic [ref=f3e33]: Consultando
+          - generic [ref=f3e34]: doppio.homolog-f2f-digital.xyz
+        - button "Recarregar" [disabled] [ref=f3e36]
+      - generic [ref=f3e37]:
+        - generic [ref=f3e38]:
+          - text: Consultando
+          - generic [ref=f3e40]: doppio.homolog-f2f-digital.xyz
+          - text: …
+        - generic [ref=f3e41]: GET /wp-json/site-status/v1/plugins
+  - button "Open Next.js Dev Tools" [ref=f3e72] [cursor=pointer]
+  - alert [ref=f3e76]

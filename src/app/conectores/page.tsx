@@ -27,12 +27,12 @@ export default async function ConectoresPage() {
     <>
       <header className="topbar">
         <div className="brand">
-          <span className="mark">f2</span>
+          <span className="mark">F2</span>
           <h1>dash-f2f</h1>
-          <span className="brand-sub">· conector MCP</span>
+          <span className="brand-sub">conector MCP</span>
         </div>
         <div className="topbar-right">
-          <span className="ro"><i /> somente leitura · GET</span>
+          <span className="ro"><i /> somente leitura</span>
           <Link className="ghost" href="/">Voltar ao painel</Link>
         </div>
       </header>

@@ -1,0 +1,19 @@
+- generic [active] [ref=f3e1]:
+  - button "Open Next.js Dev Tools" [ref=f3e72] [cursor=pointer]
+  - alert [ref=f3e76]: Entrar — dash-f2f
+  - main [ref=f3e77]:
+    - generic [ref=f3e78]:
+      - generic [ref=f3e79]:
+        - generic [ref=f3e80]: F2
+        - heading "dash-f2f" [level=1] [ref=f3e81]
+      - paragraph [ref=f3e82]: Monitor somente leitura dos plugins dos seus sites WordPress.
+      - generic [ref=f3e83]:
+        - generic [ref=f3e84]: E-mail
+        - textbox "E-mail" [ref=f3e85]
+        - generic [ref=f3e86]: Senha
+        - textbox "Senha" [ref=f3e87]
+        - button "Entrar" [ref=f3e88] [cursor=pointer]
+      - paragraph [ref=f3e89]:
+        - text: Não tem conta?
+        - link "Criar conta" [ref=f3e90] [cursor=pointer]:
+          - /url: /auth/sign-up

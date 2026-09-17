@@ -1,0 +1,58 @@
+- generic [active] [ref=f2e1]:
+  - banner [ref=f2e2]:
+    - generic [ref=f2e3]:
+      - generic [ref=f2e4]: F2
+      - heading "dash-f2f" [level=1] [ref=f2e5]
+      - generic [ref=f2e6]: /conector MCP
+    - generic [ref=f2e7]:
+      - generic [ref=f2e8]: somente leitura
+      - link "Voltar ao painel" [ref=f2e10] [cursor=pointer]:
+        - /url: /
+  - main [ref=f2e11]:
+    - generic [ref=f2e12]:
+      - generic [ref=f2e13]: Conector MCP
+      - heading "Ligue seus sites a um assistente" [level=2] [ref=f2e14]
+      - paragraph [ref=f2e15]:
+        - text: Gere uma URL e cole no Claude, no ChatGPT ou em qualquer cliente MCP. O assistente passa a responder sobre os seus sites — quais plugins estão desatualizados, o que mudou na última varredura, quem parou de responder.
+        - strong [ref=f2e16]: Somente leitura
+        - text: ": nada é alterado no painel nem nos WordPress."
+    - generic [ref=f2e18]:
+      - generic [ref=f2e19]:
+        - generic [ref=f2e20]: Nome do conector
+        - textbox "Nome do conector" [ref=f2e21]:
+          - /placeholder: Claude do notebook
+      - button "Gerar URL do conector" [ref=f2e22] [cursor=pointer]
+    - generic [ref=f2e23]:
+      - generic [ref=f2e24]: Onde colar
+      - generic [ref=f2e25]:
+        - generic [ref=f2e26]:
+          - generic [ref=f2e27]: Claude (app e web)
+          - paragraph [ref=f2e28]: Configurações → Conectores → Adicionar conector personalizado → cole a URL.
+        - generic [ref=f2e29]:
+          - generic [ref=f2e30]: ChatGPT
+          - paragraph [ref=f2e31]: Configurações → Conectores (modo desenvolvedor) → Novo conector → cole a URL.
+        - generic [ref=f2e32]:
+          - generic [ref=f2e33]: Claude Code / Cursor
+          - paragraph [ref=f2e34]: claude mcp add --transport http dash-f2f "<URL>"
+    - generic [ref=f2e35]:
+      - generic [ref=f2e36]: Conectores ativos · 1
+      - table [ref=f2e38]:
+        - rowgroup [ref=f2e39]:
+          - row [ref=f2e40]:
+            - columnheader "Nome" [ref=f2e41]
+            - columnheader "Início do token" [ref=f2e42]
+            - columnheader "Último uso" [ref=f2e43]
+            - columnheader "Ações" [ref=f2e44]
+        - rowgroup [ref=f2e45]:
+          - row [ref=f2e46]:
+            - cell "claude criado em 15/09/2026" [ref=f2e47]:
+              - generic [ref=f2e48]: claude
+              - generic [ref=f2e49]: criado em 15/09/2026
+            - cell "dashf2f_-S70r-…" [ref=f2e50]
+            - cell "17/09/2026, 17:08:57" [ref=f2e52]
+            - cell [ref=f2e53]:
+              - button "Revogar" [ref=f2e54] [cursor=pointer]
+    - generic [ref=f2e55]:
+      - generic [ref=f2e56]: O que o assistente consegue ver
+      - paragraph [ref=f2e57]: "Os sites cadastrados nesta conta, o inventário de plugins de cada varredura, o histórico e as diferenças entre varreduras. Nada além disso: a conexão com o banco usa um usuário que só tem permissão de leitura, as consultas são fixas e o assistente não escreve SQL."
+  - button "Open Next.js Dev Tools" [ref=f2e63] [cursor=pointer]

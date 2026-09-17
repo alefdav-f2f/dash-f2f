@@ -90,16 +90,16 @@ export function Dashboard({ sites, user }: Props) {
     <>
       <header className="topbar">
         <div className="brand">
-          <span className="mark">f2</span>
+          <span className="mark">F2</span>
           <h1>dash-f2f</h1>
-          <span className="brand-sub">· monitor de plugins WordPress</span>
+          <span className="brand-sub">monitor de plugins WordPress</span>
         </div>
         <div className="topbar-right">
-          <span className="ro"><i /> somente leitura · GET</span>
+          <span className="ro"><i /> somente leitura</span>
           <Link className="ghost" href="/conectores">Conector MCP</Link>
           <form action={signOutAction}>
             <button className="ghost" type="submit" title={user.email}>
-              {user.name} · sair
+              <span className="user-name">{user.name} · </span>sair
             </button>
           </form>
         </div>
@@ -117,14 +117,6 @@ export function Dashboard({ sites, user }: Props) {
             onRemove={handleRemove}
           />
 
-          <div className="legend">
-            <div className="eyebrow legend-title">Legenda de status</div>
-            <div className="legend-row"><span className="sw sw-au" /> Ativo (desatualizado)</div>
-            <div className="legend-row"><span className="sw sw-a" /> Ativo</div>
-            <div className="legend-row"><span className="sw sw-iu" /> Inativo (desatualizado)</div>
-            <div className="legend-row"><span className="sw sw-i" /> Inativo</div>
-          </div>
-
           <footer className="side-foot">
             O painel só faz <span className="mono">GET</span> em<br />
             <span className="mono">/wp-json/site-status/v1/plugins</span>.<br />
@@ -136,7 +128,7 @@ export function Dashboard({ sites, user }: Props) {
           <div className="mhead">
             <div>
               <div className="eyebrow">Consultando</div>
-              <div className="url mono">{currentSite ? displayUrl(currentSite) : '—'}</div>
+              <div className="url">{currentSite ? displayUrl(currentSite) : '—'}</div>
             </div>
             <div className="mhead-right">
               {view.status === 'ok' && <RelativeTime timestamp={view.fetchedAt} />}

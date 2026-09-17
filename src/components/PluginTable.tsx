@@ -22,7 +22,12 @@ export function PluginTable({ plugins, filter, onFilter, changes = {} }: Props) 
     active: stats.active,
     inactive: stats.inactive,
   };
-  const rows = plugins.filter(FILTERS[filter].test);
+  // O que exige ação vem primeiro: pendentes, depois ativos, depois nome.
+  const rows = plugins.filter(FILTERS[filter].test).slice().sort((a, b) => {
+    if (a.has_update !== b.has_update) return a.has_update ? -1 : 1;
+    if (a.is_active !== b.is_active) return a.is_active ? -1 : 1;
+    return a.name.localeCompare(b.name, 'pt-BR');
+  });
 
   return (
     <div className="tablewrap">
@@ -40,22 +45,21 @@ export function PluginTable({ plugins, filter, onFilter, changes = {} }: Props) 
             </button>
           ))}
         </div>
-        <span className="count">exibindo {rows.length} de {stats.total}</span>
+        <span className="count">{rows.length} de {stats.total} plugins</span>
       </div>
 
       <table>
         <thead>
           <tr>
-            <th style={{ width: '44%' }}>Plugin</th>
-            <th style={{ width: '15%' }}>Versão atual</th>
-            <th style={{ width: '15%' }}>Nova versão</th>
-            <th style={{ width: '26%' }}>Status</th>
+            <th style={{ width: '46%' }}>Plugin</th>
+            <th style={{ width: '24%' }}>Versão</th>
+            <th style={{ width: '30%' }}>Status</th>
           </tr>
         </thead>
         <tbody>
           {rows.length === 0 ? (
             <tr>
-              <td colSpan={4} className="table-empty">Nenhum plugin neste filtro.</td>
+              <td colSpan={3} className="table-empty">Nenhum plugin neste filtro.</td>
             </tr>
           ) : (
             rows.map((p) => {
@@ -73,9 +77,9 @@ export function PluginTable({ plugins, filter, onFilter, changes = {} }: Props) 
                     </div>
                     {p.file && <div className="pfile">{p.file}</div>}
                   </td>
-                  <td data-col="versao"><span className="ver">{p.version}</span></td>
-                  <td data-col="nova" className={hasNew ? undefined : 'is-empty'}>
-                    {hasNew ? <span className="new">{p.new_version}</span> : <span className="ver dash">—</span>}
+                  <td data-col="versao">
+                    <span className="ver">{p.version}</span>
+                    {hasNew && <span className="new">{p.new_version}</span>}
                   </td>
                   <td data-col="status">
                     <span className={`badge ${status.className}`}>{status.label}</span>

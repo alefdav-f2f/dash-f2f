@@ -7,11 +7,11 @@ export type StatusInfo = { key: PluginStatusKey; label: string; className: strin
 /** Os 4 estados canônicos derivados de is_active + has_update. */
 export function pluginStatus(p: Plugin): StatusInfo {
   if (p.is_active && p.has_update)
-    return { key: 'active-outdated', label: 'Ativo (desatualizado)', className: 'badge-active-outdated' };
+    return { key: 'active-outdated', label: 'Ativo · atualização pendente', className: 'badge-active-outdated' };
   if (p.is_active)
     return { key: 'active', label: 'Ativo', className: 'badge-active' };
   if (p.has_update)
-    return { key: 'inactive-outdated', label: 'Inativo (desatualizado)', className: 'badge-inactive-outdated' };
+    return { key: 'inactive-outdated', label: 'Inativo · atualização pendente', className: 'badge-inactive-outdated' };
   return { key: 'inactive', label: 'Inativo', className: 'badge-inactive' };
 }
 

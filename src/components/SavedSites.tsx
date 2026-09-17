@@ -28,7 +28,7 @@ export function SavedSites({ sites, current, freshOutdated, onSelect, onRemove }
     <div>
       <div className="eyebrow list-head">
         <span>Sites salvos · {sites.length}</span>
-        <span className="list-head-hint">nº = desatualizados</span>
+        <span className="list-head-hint">pendências</span>
       </div>
 
       {sites.length === 0 ? (

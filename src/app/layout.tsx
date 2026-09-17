@@ -1,19 +1,20 @@
 import type { Metadata } from 'next';
-import { Schibsted_Grotesk, Spline_Sans_Mono } from 'next/font/google';
+import { Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
 
 // next/font auto-hospeda as fontes: zero request para o Google em runtime.
-const grotesk = Schibsted_Grotesk({
+// Geist é a face do sistema Vercel — peso máximo 600, nunca 700.
+const geist = Geist({
   subsets: ['latin'],
-  weight: ['400', '500', '700'],
-  variable: '--font-grotesk',
+  weight: ['400', '500', '600'],
+  variable: '--font-geist',
   display: 'swap',
 });
 
-const mono = Spline_Sans_Mono({
+const geistMono = Geist_Mono({
   subsets: ['latin'],
   weight: ['400', '500'],
-  variable: '--font-mono',
+  variable: '--font-geist-mono',
   display: 'swap',
 });
 
@@ -25,7 +26,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="pt-BR" className={`${grotesk.variable} ${mono.variable}`}>
+    <html lang="pt-BR" className={`${geist.variable} ${geistMono.variable}`}>
       <body>{children}</body>
     </html>
   );
