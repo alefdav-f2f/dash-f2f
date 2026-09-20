@@ -34,6 +34,7 @@ type View =
       failures: Partial<Record<InventoryResource, string>>;
       fetchedAt: number;
       changes: Change[];
+      resourceChanges: Change[];
       previousScanAt: string | null;
     }
   | {
@@ -79,6 +80,7 @@ export function Dashboard({ sites, user }: Props) {
         failures: data.failures,
         fetchedAt: Date.parse(data.fetchedAt),
         changes: data.changes,
+        resourceChanges: data.resourceChanges,
         previousScanAt: data.previousScanAt,
       });
       setFreshOutdated((prev) => ({ ...prev, [site]: computeStats(data.plugins).outdated }));
@@ -188,7 +190,11 @@ export function Dashboard({ sites, user }: Props) {
           {view.status === 'ok' && <HealthCritical health={view.health} />}
 
           {view.status === 'ok' && (
-            <ChangeLog changes={view.changes} previousScanAt={view.previousScanAt} />
+            <ChangeLog
+              changes={view.changes}
+              resourceChanges={view.resourceChanges}
+              previousScanAt={view.previousScanAt}
+            />
           )}
 
           {view.status === 'idle' && (

@@ -288,6 +288,19 @@ td[data-col="saude-status"] .badge-unknown { margin-left: 0; }
 .chg-new, .chg-update-available { color: var(--amber); border-color: rgba(245, 166, 35, .35); }
 .chg-updated, .chg-activated { color: var(--green); border-color: rgba(12, 206, 107, .3); }
 .chg-removed, .chg-deactivated { border-style: dashed; }
+/* Ganho (ou possível perda de controle) de administrator: o único evento desta
+   feature que justifica sair do cinza padrão. Preenchido, não só contornado,
+   para não competir visualmente com badges comuns — cobre `admin-elevated`,
+   um usuário novo que já chega como admin, e mudança de admin_email (o mesmo
+   risco de account takeover, com outra cara). */
+.chg-admin-elevated {
+  color: var(--red); background: rgba(238, 0, 0, .14); border-color: rgba(238, 0, 0, .5); font-weight: 600;
+}
+/* Perda de administrator é notável por outro motivo: pode ser uma remoção
+   legítima, ou o rastro de quem promoveu a si mesmo e removeu o admin
+   original depois. Mesmo vermelho, sem preenchimento — distingue "ganhou
+   poder" de "perdeu poder" sem inventar uma terceira cor. */
+.chg-admin-demoted { color: var(--red); border-color: rgba(238, 0, 0, .4); }
 
 /* ── changelog ────────────────────────────────────────────────────────── */
 .changelog-none { font-size: 13px; color: var(--mute); margin-bottom: 20px; }
@@ -300,12 +313,28 @@ td[data-col="saude-status"] .badge-unknown { margin-left: 0; }
   padding: 13px 18px; border-bottom: 1px solid var(--line);
 }
 .changelog-head .count { font-family: var(--font-code); font-size: 12px; letter-spacing: 0; color: var(--mute); }
+/* A linha mais importante do componente: deixa explícito que isto é uma
+   comparação de estado entre duas varreduras, não um log de quem fez o quê.
+   Sempre visível — nunca em tooltip — porque é o que evita que alguém trate
+   o painel como se tivesse um audit trail que o WordPress não fornece. */
+.changelog-disclaimer {
+  font-size: 12px; line-height: 18px; color: var(--body);
+  padding: 10px 18px; border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
+}
+.changelog-group + .changelog-group { border-top: 1px solid var(--line); }
+.changelog-group-head {
+  padding: 10px 18px 0; font-size: 11px; letter-spacing: 0; color: var(--faint);
+}
 .changelog-list { list-style: none; }
 .changelog-list li {
   display: flex; align-items: center; gap: 10px;
   padding: 10px 18px; border-bottom: 1px solid var(--line); font-size: 13px;
 }
 .changelog-list li:last-child { border-bottom: none; }
+/* Realce da linha inteira nos quatro casos de risco de administrator — o
+   badge já muda de cor, isto reforça sem depender só dele. */
+.chg-row-alert { box-shadow: inset 2px 0 0 var(--red); background: rgba(238, 0, 0, .04); }
 .changelog-more { color: var(--faint); font-size: 12px; }
 .chg-name { font-weight: 500; }
 .chg-ver { font-family: var(--font-code); font-size: 12px; letter-spacing: 0; color: var(--faint); }
