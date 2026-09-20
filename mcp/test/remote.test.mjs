@@ -25,12 +25,12 @@ async function connect(token) {
   return client;
 }
 
-test('conector remoto responde ao handshake e lista as 8 tools', { skip }, async (t) => {
+test('conector remoto responde ao handshake e lista as 10 tools', { skip }, async (t) => {
   const client = await connect(TOKEN);
   t.after(() => client.close());
 
   const { tools } = await client.listTools();
-  assert.equal(tools.length, 8);
+  assert.equal(tools.length, 10);
   for (const tool of tools) {
     assert.equal(tool.annotations?.readOnlyHint, true, `${tool.name} não está marcada como readOnly`);
   }

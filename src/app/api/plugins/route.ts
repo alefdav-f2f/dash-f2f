@@ -1,8 +1,11 @@
 // Consulta um site do usuário logado, grava a varredura e devolve o snapshot
 // junto com o diff contra a varredura anterior.
 //
-// CONTRATO: só GET sai daqui para o WordPress (ver src/lib/wp.ts). A escrita
-// acontece apenas no nosso Postgres.
+// CONTRATO: só GET sai daqui para o WordPress (ver src/lib/wp-rest.ts, que é o
+// único ponto de saída). A credencial usada TEM poder de escrita no WordPress —
+// Application Password não tem escopo no core — então a garantia de somente
+// leitura é imposta por aquele módulo, não pela credencial. A escrita acontece
+// apenas no nosso Postgres.
 
 import { NextRequest, NextResponse } from 'next/server';
 import { currentUser } from '@/lib/auth';

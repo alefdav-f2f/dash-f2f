@@ -1,6 +1,6 @@
 // Contratos de dados compartilhados entre servidor e cliente.
 
-/** Objeto retornado pelo endpoint /wp-json/site-status/v1/plugins */
+/** Plugin normalizado a partir de /wp-json/wp/v2/plugins (ver src/lib/wp-rest.ts). */
 export type Plugin = {
   file: string;
   name: string;

@@ -1,8 +1,8 @@
 import 'server-only';
 
 // Cliente da REST API nativa do WordPress, autenticado por Application Password.
-// Substitui src/lib/wp.ts: em vez de um endpoint customizado público, fala com
-// /wp-json/wp/v2/* usando Basic auth.
+// Substituiu o antigo src/lib/wp.ts (removido): em vez de um endpoint customizado
+// público, fala com /wp-json/wp/v2/* usando Basic auth.
 //
 // CONTRATO: só GET sai daqui. A credencial tem poder de escrita no WordPress
 // (Application Password herda TODAS as capabilities do usuário — o core não tem

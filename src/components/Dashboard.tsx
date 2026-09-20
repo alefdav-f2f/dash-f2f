@@ -145,8 +145,8 @@ export function Dashboard({ sites, user }: Props) {
           )}
 
           <footer className="side-foot">
-            O painel só faz <span className="mono">GET</span> em<br />
-            <span className="mono">/wp-json/site-status/v1/plugins</span>.<br />
+            O painel só faz <span className="mono">GET</span> na<br />
+            REST API nativa do WordPress.<br />
             Nenhuma escrita no WordPress.
           </footer>
         </aside>
