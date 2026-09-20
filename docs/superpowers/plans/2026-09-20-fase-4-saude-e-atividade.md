@@ -383,6 +383,26 @@ Atualizar a contagem de tools nos dois arquivos de teste (13 no total).
 
 ---
 
+### Task 14b: Uniformizar a contagem das abas
+
+**Files:** `src/components/InventoryTabs.tsx`
+
+As abas ficaram contando de dois jeitos: Plugins e Usuários mostram **total**, Saúde e
+Temas mostram só o que **precisa de atenção**. "Temas · 1" hoje pode ser lido como
+"este site tem 1 tema", quando significa "1 tema pede atenção".
+
+Escolher uma convenção e aplicar nas quatro. A de atenção é mais útil num painel de
+monitoramento, mas exige que o número some zero quando está tudo bem — e aí a aba fica
+sem número, como Saúde e Temas já fazem. Alternativa: mostrar sempre o total e marcar
+atenção com um ponto, sem número duplo.
+
+Decidir, justificar e aplicar. O que não pode ficar é o estado atual, em que o mesmo
+formato visual significa coisas diferentes em abas vizinhas.
+
+- [ ] Commit: `fix: use one counting convention across inventory tabs`
+
+---
+
 ### Task 15: Documentação
 
 **Files:** `README.md`, vault
