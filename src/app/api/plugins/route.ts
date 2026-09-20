@@ -84,10 +84,10 @@ export async function GET(request: NextRequest) {
     return fail(wpErr.status, wpErr.kind, wpErr.message, wpErr.detail);
   }
 
-  const { plugins, themes, users, settings, failures } = inventory;
+  const { plugins, themes, users, settings, health, failures } = inventory;
 
   const scanId = await saveScan({ siteId: row.id, source: 'manual', plugins });
-  await saveInventoryExtras(scanId, { themes, users, settings });
+  await saveInventoryExtras(scanId, { themes, users, settings, health });
 
   return NextResponse.json(
     {
@@ -98,6 +98,7 @@ export async function GET(request: NextRequest) {
       themes,
       users,
       settings,
+      health,
       failures,
       changes: diffScans(plugins, previousPlugins),
       previousScanAt: previousScan?.fetched_at ?? null,

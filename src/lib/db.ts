@@ -4,7 +4,7 @@ import 'server-only';
 // nenhuma query de site aceita ser chamada sem o dono.
 
 import { neon } from '@neondatabase/serverless';
-import type { Plugin, SiteInventory, Theme, WpSettings, WpUser } from './types';
+import type { HealthCheck, Plugin, SiteInventory, Theme, WpSettings, WpUser } from './types';
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -194,7 +194,7 @@ export async function outdatedHistory(siteId: string, limit = 30): Promise<Array
 /** Snapshots dos recursos além de plugins. Chamado logo após saveScan. */
 export async function saveInventoryExtras(
   scanId: string,
-  { themes, users, settings }: Pick<SiteInventory, 'themes' | 'users' | 'settings'>,
+  { themes, users, settings, health }: Pick<SiteInventory, 'themes' | 'users' | 'settings' | 'health'>,
 ): Promise<void> {
   if (themes.length > 0) {
     await sql`
@@ -230,6 +230,19 @@ export async function saveInventoryExtras(
       ON CONFLICT (scan_id) DO NOTHING
     `;
   }
+
+  if (health.length > 0) {
+    await sql`
+      INSERT INTO scan_health (scan_id, test, status, label, badge)
+      SELECT ${scanId}, * FROM unnest(
+        ${health.map((h) => h.test)}::text[],
+        ${health.map((h) => h.status)}::text[],
+        ${health.map((h) => h.label)}::text[],
+        ${health.map((h) => h.badge)}::text[]
+      )
+      ON CONFLICT (scan_id, test) DO NOTHING
+    `;
+  }
 }
 
 export async function scanThemes(scanId: string): Promise<Theme[]> {
@@ -252,4 +265,25 @@ export async function scanSettings(scanId: string): Promise<WpSettings | null> {
       FROM scan_settings WHERE scan_id = ${scanId}
   `) as WpSettings[];
   return rows[0] ?? null;
+}
+
+/**
+ * Site Health de uma varredura, pior status primeiro. Ordem pensada para quem
+ * vai operar: 'critical' precisa de ação agora, 'recommended' é a próxima
+ * fila, 'unknown' é "não sabemos" (não é sinal de saúde nem de problema, mas
+ * merece atenção antes do que um 'good' confirmado), e 'good' fecha a lista
+ * porque não exige nada de ninguém.
+ */
+export async function scanHealth(scanId: string): Promise<HealthCheck[]> {
+  return (await sql`
+    SELECT test, status, label, badge FROM scan_health
+     WHERE scan_id = ${scanId}
+     ORDER BY CASE status
+                WHEN 'critical'    THEN 0
+                WHEN 'recommended' THEN 1
+                WHEN 'unknown'     THEN 2
+                WHEN 'good'        THEN 3
+                ELSE 4
+              END, test
+  `) as HealthCheck[];
 }

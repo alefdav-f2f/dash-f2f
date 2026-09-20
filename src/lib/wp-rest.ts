@@ -12,7 +12,8 @@ import 'server-only';
 import { isPrivateHost } from './site-url';
 import { latestVersions } from './wporg';
 import { mergePluginVersions } from './inventory';
-import type { ApiErrorKind, InventoryResource, Plugin, RawPlugin, SiteInventory, Theme, WpSettings, WpUser } from './types';
+import { fetchSiteHealth } from './wp-health';
+import type { ApiErrorKind, HealthCheck, InventoryResource, Plugin, RawPlugin, SiteInventory, Theme, WpSettings, WpUser } from './types';
 
 const TIMEOUT_MS = 12_000;
 
@@ -230,11 +231,12 @@ export async function collectInventory(site: string, credential: Credential): Pr
     }
   }
 
-  const [themes, users, settings] = await Promise.all([
+  const [themes, users, settings, health] = await Promise.all([
     attempt('themes', () => fetchThemes(site, credential), [] as Theme[]),
     attempt('users', () => fetchUsers(site, credential), [] as WpUser[]),
     attempt('settings', () => fetchSettings(site, credential), null as WpSettings | null),
+    attempt('health', () => fetchSiteHealth(site, credential), [] as HealthCheck[]),
   ]);
 
-  return { plugins, themes, users, settings, failures };
+  return { plugins, themes, users, settings, health, failures };
 }

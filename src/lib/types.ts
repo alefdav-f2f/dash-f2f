@@ -68,6 +68,7 @@ export type PluginsResponse = {
   themes: Theme[];
   users: WpUser[];
   settings: WpSettings | null;
+  health: HealthCheck[];
   /** Recursos que não puderam ser lidos nesta varredura, com o motivo. */
   failures: Partial<Record<InventoryResource, string>>;
   /** Mudanças desde a varredura anterior (vazio na primeira). */
@@ -121,13 +122,14 @@ export type HealthCheck = {
 };
 
 /** Recursos opcionais do inventário, além de plugins. */
-export type InventoryResource = 'themes' | 'users' | 'settings';
+export type InventoryResource = 'themes' | 'users' | 'settings' | 'health';
 
 export type SiteInventory = {
   plugins: Plugin[];
   themes: Theme[];
   users: WpUser[];
   settings: WpSettings | null;
+  health: HealthCheck[];
   /**
    * Recursos que não puderam ser lidos, com o motivo. Vazio = tudo leu.
    *
