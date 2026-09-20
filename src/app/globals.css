@@ -420,3 +420,27 @@ tbody tr:hover td { background: var(--surface-2); }
 
 .badge-unknown { margin-left: 6px; opacity: .7; font-style: italic; }
 .coverage { font-size: 13px; color: var(--mute); margin: 8px 0 0; }
+
+/* ── inventário: abas de temas, usuários e configurações ─────────────── */
+.inv { display: flex; flex-direction: column; gap: 14px; }
+
+/* aba cujo recurso falhou ao ler: o vermelho de erro no chip, sem desabilitar
+   o botão — desabilitar esconderia a explicação atrás de um controle inerte. */
+.chip-fail { color: var(--red); }
+.chip-fail::after {
+  content: "";
+  display: inline-block; width: 5px; height: 5px; margin-left: 7px;
+  border-radius: 50%; background: var(--red); vertical-align: 2px;
+}
+
+/* papéis do usuário: um badge por role (roles chega como string "a,b,c") */
+.roles { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* lista de definição das configurações do site */
+.dl { display: grid; gap: 14px; }
+.dl-row { display: grid; grid-template-columns: 180px 1fr; gap: 12px; align-items: baseline; }
+.dl-row dd { word-break: break-word; }
+
+@media (max-width: 900px) {
+  .dl-row { grid-template-columns: 1fr; gap: 4px; }
+}

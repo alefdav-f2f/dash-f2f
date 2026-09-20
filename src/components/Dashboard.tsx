@@ -10,19 +10,31 @@ import { SiteForm } from '@/components/SiteForm';
 import { SavedSites, type SiteSummary } from '@/components/SavedSites';
 import { CredentialForm } from '@/components/CredentialForm';
 import { StatsRow } from '@/components/StatsRow';
-import { PluginTable } from '@/components/PluginTable';
+import { InventoryTabs } from '@/components/InventoryTabs';
 import { ChangeLog } from '@/components/ChangeLog';
 import { LoadingState, ErrorState, EmptyState } from '@/components/States';
 import { ApiError, fetchPlugins } from '@/lib/client-api';
 import { computeStats, type FilterKey } from '@/lib/plugins';
 import { changesByFile, type Change } from '@/lib/diff';
 import { displayUrl } from '@/lib/site-url';
-import type { ApiErrorKind, Plugin } from '@/lib/types';
+import type { ApiErrorKind, InventoryResource, Plugin, Theme, WpSettings, WpUser } from '@/lib/types';
 
 type View =
   | { status: 'idle' }
   | { status: 'loading'; site: string }
-  | { status: 'ok'; site: string; plugins: Plugin[]; fetchedAt: number; changes: Change[]; previousScanAt: string | null }
+  | {
+      status: 'ok';
+      site: string;
+      plugins: Plugin[];
+      themes: Theme[];
+      users: WpUser[];
+      settings: WpSettings | null;
+      /** Recursos que não puderam ser lidos nesta varredura, com o motivo. */
+      failures: Partial<Record<InventoryResource, string>>;
+      fetchedAt: number;
+      changes: Change[];
+      previousScanAt: string | null;
+    }
   | { status: 'error'; site: string; kind: ApiErrorKind; message: string };
 
 type Props = {
@@ -53,6 +65,10 @@ export function Dashboard({ sites, user }: Props) {
         status: 'ok',
         site,
         plugins: data.plugins,
+        themes: data.themes,
+        users: data.users,
+        settings: data.settings,
+        failures: data.failures,
         fetchedAt: Date.parse(data.fetchedAt),
         changes: data.changes,
         previousScanAt: data.previousScanAt,
@@ -175,20 +191,24 @@ export function Dashboard({ sites, user }: Props) {
           {view.status === 'loading' && <LoadingState site={view.site} />}
           {view.status === 'error' && <ErrorState kind={view.kind} message={view.message} />}
 
-          {view.status === 'ok' &&
-            (view.plugins.length === 0 ? (
-              <EmptyState
-                title="Nenhum plugin instalado neste site"
-                body="O endpoint respondeu com uma lista vazia."
-              />
-            ) : (
-              <PluginTable
-                plugins={view.plugins}
-                filter={filter}
-                onFilter={setFilter}
-                changes={changeIndex}
-              />
-            ))}
+          {view.status === 'ok' && (
+            // As quatro abas ficam sempre visíveis, mesmo com zero plugins: um
+            // site recém-instalado pode não ter plugin nenhum e ainda assim
+            // ter temas e usuários que valem a pena ver. PluginTable já trata
+            // lista vazia com sua própria linha "Nenhum plugin neste filtro" —
+            // não precisa de um EmptyState de página inteira bloqueando as
+            // outras abas.
+            <InventoryTabs
+              plugins={view.plugins}
+              themes={view.themes}
+              users={view.users}
+              settings={view.settings}
+              failures={view.failures}
+              filter={filter}
+              onFilter={setFilter}
+              changes={changeIndex}
+            />
+          )}
         </main>
       </div>
     </>
