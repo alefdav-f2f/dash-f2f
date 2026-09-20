@@ -69,3 +69,15 @@ export type PluginsResponse = {
   changes: import('./diff').Change[];
   previousScanAt: string | null;
 };
+
+/**
+ * Status público da credencial de um site — nunca inclui a senha, nem cifrada.
+ * Tipo compartilhado entre `src/lib/credentials.ts` (server-only, que também
+ * guarda `created_at`) e os componentes cliente que só precisam destes três
+ * campos para desenhar o formulário.
+ */
+export type CredentialInfo = {
+  wp_user: string;
+  last_verified_at: string | null;
+  last_error: string | null;
+};

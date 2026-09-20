@@ -381,6 +381,17 @@ tbody tr:hover td { background: var(--surface-2); }
 .conn-foot p { font-size: 14px; line-height: 22px; color: var(--body); max-width: 62ch; }
 
 /* ── responsivo ───────────────────────────────────────────────────────── */
+/* ── credencial por site ─────────────────────────────────────────────── */
+/* Chrome do card (borda, raio, fundo, padding) vem de .panel-box, já usado
+   em .load/.err — aqui só o layout interno do formulário. Os labels usam
+   .eyebrow, o mesmo padrão de SiteForm/Connectors (sentence case: o v3
+   abandonou uppercase nos rótulos, então nada específico foi criado aqui). */
+.cred { display: grid; gap: 8px; }
+.cred-help { font-size: 13px; line-height: 1.5; color: var(--mute); margin: 0 0 4px; }
+.cred-error { font-size: 13px; color: var(--red); margin: 0; }
+.cred-ok { font-size: 13px; color: var(--green); margin: 0; }
+.cred-actions { display: flex; gap: 8px; margin-top: 4px; }
+
 @media (max-width: 900px) {
   .shell { grid-template-columns: 1fr; padding: 20px 16px; gap: 20px; }
   .side { border-bottom: 1px solid var(--line); padding-bottom: 20px; }

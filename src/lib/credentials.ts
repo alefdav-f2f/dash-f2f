@@ -79,6 +79,24 @@ export async function credentialStatus(
   return rows[0] ?? null;
 }
 
+/**
+ * Status de todas as credenciais do dono, numa única consulta — evita N+1 ao
+ * montar a lista de sites na página inicial (um `credentialStatus` por site
+ * faria uma query por site).
+ */
+export async function listCredentialStatuses(
+  ownerId: string,
+): Promise<Map<string, CredentialStatus>> {
+  const rows = (await sql`
+    SELECT c.site_id, c.wp_user, c.created_at, c.last_verified_at, c.last_error
+      FROM site_credentials c
+      JOIN sites s ON s.id = c.site_id
+     WHERE s.owner_id = ${ownerId}
+  `) as Array<CredentialStatus & { site_id: string }>;
+
+  return new Map(rows.map((r) => [r.site_id, r]));
+}
+
 export async function deleteCredential(ownerId: string, siteId: string): Promise<void> {
   await sql`
     DELETE FROM site_credentials

@@ -4,6 +4,7 @@
 // o "×" remove o site e o histórico dele — nada é tocado no WordPress.
 
 import { displayUrl } from '@/lib/site-url';
+import type { CredentialInfo } from '@/lib/types';
 
 export type SiteSummary = {
   id: string;
@@ -12,6 +13,8 @@ export type SiteSummary = {
   lastOk: boolean | null;
   lastOutdated: number | null;
   lastErrorKind: string | null;
+  /** null = nenhuma Application Password cadastrada para este site ainda. */
+  credential: CredentialInfo | null;
 };
 
 type Props = {

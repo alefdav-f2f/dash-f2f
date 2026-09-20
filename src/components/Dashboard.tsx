@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
 import { addSiteAction, removeSiteAction, signOutAction } from '@/app/actions';
 import { SiteForm } from '@/components/SiteForm';
 import { SavedSites, type SiteSummary } from '@/components/SavedSites';
+import { CredentialForm } from '@/components/CredentialForm';
 import { StatsRow } from '@/components/StatsRow';
 import { PluginTable } from '@/components/PluginTable';
 import { ChangeLog } from '@/components/ChangeLog';
@@ -85,6 +86,7 @@ export function Dashboard({ sites, user }: Props) {
 
   const currentSite = view.status === 'idle' ? null : view.site;
   const changeIndex = view.status === 'ok' ? changesByFile(view.changes) : {};
+  const currentSiteSummary = currentSite ? sites.find((s) => s.url === currentSite) ?? null : null;
 
   return (
     <>
@@ -116,6 +118,15 @@ export function Dashboard({ sites, user }: Props) {
             onSelect={(url) => void query(url)}
             onRemove={handleRemove}
           />
+
+          {currentSiteSummary && (
+            <CredentialForm
+              key={currentSiteSummary.id}
+              siteId={currentSiteSummary.id}
+              siteUrl={currentSiteSummary.url}
+              current={currentSiteSummary.credential}
+            />
+          )}
 
           <footer className="side-foot">
             O painel só faz <span className="mono">GET</span> em<br />
