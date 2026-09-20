@@ -83,6 +83,14 @@ export function PluginTable({ plugins, filter, onFilter, changes = {} }: Props) 
                   </td>
                   <td data-col="status">
                     <span className={`badge ${status.className}`}>{status.label}</span>
+                    {p.update_source === 'unknown' && (
+                      <span
+                        className="badge badge-unknown"
+                        title="Plugin fora do repositório oficial do WordPress. Não temos como saber se há versão mais nova."
+                      >
+                        atualização desconhecida
+                      </span>
+                    )}
                   </td>
                 </tr>
               );

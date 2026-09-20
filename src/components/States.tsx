@@ -5,7 +5,7 @@
 import { displayUrl } from '@/lib/site-url';
 import type { ApiErrorKind } from '@/lib/types';
 
-const PLUGINS_PATH = '/wp-json/site-status/v1/plugins';
+const PLUGINS_PATH = '/wp-json/wp/v2/plugins';
 const SKELETON_WIDTHS = ['72%', '58%', '81%', '64%', '47%'];
 
 export function LoadingState({ site }: { site: string }) {
@@ -36,8 +36,9 @@ function errorCopy(kind: ApiErrorKind, message: string) {
         title: 'Endpoint não encontrado · 404',
         body: (
           <>
-            <code>{PLUGINS_PATH}</code> não existe neste site. Confirme se o plugin que expõe o
-            status está instalado e ativo.
+            <code>{PLUGINS_PATH}</code> não respondeu neste site. A API REST do WordPress
+            provavelmente está desabilitada ou sendo bloqueada — comum em plugins de segurança
+            ou num WAF na frente do site.
           </>
         ),
       };
@@ -53,6 +54,48 @@ function errorCopy(kind: ApiErrorKind, message: string) {
       };
     case 'invalid_url':
       return { title: 'URL inválida', body: <>{message}</>, muted: true };
+    case 'no_credential':
+      return {
+        title: 'Site sem credencial',
+        body: (
+          <>
+            Este site ainda não tem Application Password cadastrada. Gere uma no wp-admin
+            em Usuários → Perfil → Senhas de aplicativo e cadastre aqui.
+          </>
+        ),
+      };
+    case 'bad_credential':
+      return {
+        title: 'Credencial ilegível',
+        body: (
+          <>
+            A credencial gravada para este site não pôde ser decifrada — provavelmente a
+            <code>CREDENTIALS_KEY</code> do servidor mudou depois que ela foi salva.
+            Cadastre a Application Password novamente.
+          </>
+        ),
+      };
+    case 'unauthorized':
+      return {
+        title: 'Credencial recusada · 401',
+        body: (
+          <>
+            O WordPress rejeitou a Application Password. Ela pode ter sido revogada — ou o
+            servidor está descartando o cabeçalho <code>Authorization</code>, o que é comum
+            em Apache/CGI e se resolve com uma regra no <code>.htaccess</code>.
+          </>
+        ),
+      };
+    case 'forbidden':
+      return {
+        title: 'Sem permissão · 403',
+        body: (
+          <>
+            O usuário autenticou mas não tem permissão para ler plugins. Essa leitura exige a
+            capability <code>activate_plugins</code> — na prática, uma conta de administrador.
+          </>
+        ),
+      };
     default:
       return { title: 'O site respondeu com erro', body: <>{message}</> };
   }
