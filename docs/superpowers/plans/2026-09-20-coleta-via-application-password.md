@@ -684,8 +684,16 @@ export type ApiErrorKind =
 Ainda em `src/lib/types.ts`, adicione os tipos do inventário, logo abaixo de `Plugin`:
 
 ```ts
-/** De onde saiu o veredito de atualização pendente. */
-export type UpdateSource = 'wporg' | 'unknown';
+/**
+ * De onde saiu o veredito de atualização pendente. Procedência, não qualidade.
+ *  - 'wporg'   — comparamos a versão instalada com a publicada no wordpress.org
+ *  - 'site'    — o próprio site afirmou, via o endpoint customizado antigo, que
+ *                lia o transient `update_plugins`. Só existe em histórico
+ *                anterior à migração; nenhum código novo produz este valor.
+ *  - 'unknown' — não dá para afirmar nada (plugin fora do repositório oficial,
+ *                ou versão instalada ilegível).
+ */
+export type UpdateSource = 'wporg' | 'site' | 'unknown';
 
 /** Plugin como sai do /wp/v2/plugins, antes de cruzar com o wordpress.org. */
 export type RawPlugin = {
@@ -707,10 +715,10 @@ de uma linha — modifique `src/lib/wp.ts`, no `return` de `normalizePlugin`:
 
 ```ts
     new_version: p.new_version != null ? String(p.new_version) : '',
-    // Transitório: o coletor antigo lê has_update direto do endpoint
-    // customizado, então a origem é o próprio site, não o wordpress.org.
-    // Este arquivo inteiro sai na Task 18.
-    update_source: 'wporg' as const,
+    // Transitório: o coletor antigo lê has_update do endpoint customizado, que
+    // por sua vez lê o transient `update_plugins`. A procedência é o próprio
+    // site — não o wordpress.org. Este arquivo inteiro sai na Task 18.
+    update_source: 'site' as const,
 ```
 
 Todos os outros usos de `Plugin` são casts (`as Plugin[]`) ou tipos de parâmetro
@@ -1355,12 +1363,18 @@ git commit -m "feat: merge raw plugin inventory with wordpress.org versions"
 Create `sql/006_scan_update_source.sql`:
 
 ```sql
--- update_source registra se o veredito de atualização veio do wordpress.org
--- ou se o plugin está fora do repositório. Sem isso o histórico não distingue
--- "em dia" de "não sabemos".
+-- update_source registra a PROCEDÊNCIA do veredito de atualização. Sem isso o
+-- histórico não distingue "em dia" de "não sabemos".
+--
+-- O DEFAULT é 'site' de propósito: toda linha que já existe aqui foi colhida
+-- pelo coletor antigo, cujo has_update vinha do endpoint customizado lendo o
+-- transient `update_plugins` do próprio WordPress. Carimbar essas linhas como
+-- 'unknown' subestimaria o que de fato sabíamos; carimbar 'wporg' seria falso,
+-- porque o wordpress.org nunca foi consultado. Linhas novas sempre informam o
+-- valor explicitamente.
 
 ALTER TABLE scan_plugins
-  ADD COLUMN IF NOT EXISTS update_source text NOT NULL DEFAULT 'unknown';
+  ADD COLUMN IF NOT EXISTS update_source text NOT NULL DEFAULT 'site';
 ```
 
 Run: `npm run db:migrate`
