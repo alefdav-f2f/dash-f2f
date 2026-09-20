@@ -95,8 +95,17 @@ export type PluginsResponse = {
   health: HealthCheck[];
   /** Recursos que não puderam ser lidos nesta varredura, com o motivo. */
   failures: Partial<Record<InventoryResource, string>>;
-  /** Mudanças desde a varredura anterior (vazio na primeira). */
+  /** Mudanças de plugin desde a varredura anterior (vazio na primeira). */
   changes: import('./diff').Change[];
+  /**
+   * Mudanças de usuário, tema e settings desde a varredura anterior — cada uma
+   * carrega `resource` ('user' | 'theme' | 'settings') para a Task 11 agrupar na
+   * exibição. Separado de `changes` de propósito: `changes` é indexado por file
+   * de plugin em `changesByFile`/`PluginTable`, e usuário (id numérico) ou tema
+   * (stylesheet) usando a mesma chave arriscaria colisão e marcaria a linha
+   * errada na tabela de plugins.
+   */
+  resourceChanges: import('./diff').Change[];
   previousScanAt: string | null;
 };
 

@@ -9,8 +9,17 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { currentUser } from '@/lib/auth';
-import { findSite, recentScans, saveInventoryExtras, saveScan, scanPlugins } from '@/lib/db';
-import { diffScans } from '@/lib/diff';
+import {
+  findSite,
+  recentScans,
+  saveInventoryExtras,
+  saveScan,
+  scanPlugins,
+  scanSettings,
+  scanThemes,
+  scanUsers,
+} from '@/lib/db';
+import { diffScans, diffSettings, diffThemes, diffUsers } from '@/lib/diff';
 import { InvalidSiteUrlError, normalizeSiteUrl } from '@/lib/site-url';
 import { collectInventory, WpError } from '@/lib/wp-rest';
 import { credentialStatus, getCredential, markCredentialResult } from '@/lib/credentials';
@@ -53,9 +62,18 @@ export async function GET(request: NextRequest) {
   const row = await findSite(user.id, site);
   if (!row) return fail(404, 'not_found', 'Este site não está na sua lista.');
 
-  // Varredura anterior (para o diff) antes de gravar a nova.
+  // Varredura anterior (para o diff) antes de gravar a nova. Varredura que
+  // falhou não deixou snapshot nenhum — nada a comparar, então as quatro
+  // listas ficam vazias e os diffs correspondentes saem vazios também.
   const [previousScan] = await recentScans(row.id, 1);
-  const previousPlugins = previousScan?.ok ? await scanPlugins(previousScan.id) : [];
+  const [previousPlugins, previousThemes, previousUsers, previousSettings] = previousScan?.ok
+    ? await Promise.all([
+        scanPlugins(previousScan.id),
+        scanThemes(previousScan.id),
+        scanUsers(previousScan.id),
+        scanSettings(previousScan.id),
+      ])
+    : [[], [], [], null];
 
   // Duas falhas de credencial, duas remediações opostas — não colapse as duas.
   // CredentialsKeyError = CREDENTIALS_KEY ausente/errada: a frota inteira está
@@ -124,6 +142,17 @@ export async function GET(request: NextRequest) {
       health,
       failures,
       changes: diffScans(plugins, previousPlugins),
+      // Usuário, tema e settings compartilham um `Change` só (ver src/lib/diff.ts):
+      // a Task 11 agrupa por `resource` para renderizar, então uma lista combinada
+      // evita que a UI tenha que voltar a separar o que já vem junto. Fica de fora
+      // de `changes` de propósito — aquele campo é indexado por file de plugin em
+      // PluginTable, e misturar chaveria por id numérico de usuário/stylesheet de
+      // tema junto com file de plugin arrisca colisão e marcaria a linha errada.
+      resourceChanges: [
+        ...diffUsers(users, previousUsers),
+        ...diffThemes(themes, previousThemes),
+        ...diffSettings(settings, previousSettings),
+      ],
       previousScanAt: previousScan?.fetched_at ?? null,
     },
     { headers: { 'Cache-Control': 'no-store' } },
