@@ -110,6 +110,16 @@ export type WpSettings = {
   language: string;
 };
 
+export type HealthStatus = 'good' | 'recommended' | 'critical' | 'unknown';
+
+export type HealthCheck = {
+  /** Slug do teste na URL, ex.: 'authorization-header'. */
+  test: string;
+  status: HealthStatus;
+  label: string;
+  badge: string;
+};
+
 /** Recursos opcionais do inventário, além de plugins. */
 export type InventoryResource = 'themes' | 'users' | 'settings';
 
