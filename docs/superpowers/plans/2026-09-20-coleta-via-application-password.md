@@ -677,6 +677,7 @@ export type ApiErrorKind =
   | 'network'
   | 'bad_payload'
   | 'no_credential'   // site sem Application Password cadastrada
+  | 'bad_credential'  // credencial gravada não decifra: pedir novo cadastro
   | 'unauthorized'    // 401: credencial errada ou revogada no WP
   | 'forbidden';      // 403: usuário sem capability (ex.: activate_plugins)
 ```
@@ -1345,12 +1346,32 @@ Modify `src/app/api/plugins/route.ts`. Troque o import de `wp`:
 ```ts
 import { collectPlugins, WpError } from '@/lib/wp-rest';
 import { getCredential, markCredentialResult } from '@/lib/credentials';
+import { SecretPayloadError } from '@/lib/crypto';
 ```
 
 E substitua o bloco `let plugins; try { plugins = await fetchSitePlugins(site); } catch ...` por:
 
 ```ts
-  const credential = await getCredential(row.id);
+  // Duas falhas de credencial, duas remediações opostas — não colapse as duas.
+  // CredentialsKeyError = CREDENTIALS_KEY ausente/errada: a frota inteira está
+  // fora, é problema de ambiente, propaga como 500.
+  // SecretPayloadError = o payload daquele site não decifra: problema de um
+  // site só, o dono precisa cadastrar a senha de novo.
+  let credential;
+  try {
+    credential = await getCredential(row.id);
+  } catch (err) {
+    if (err instanceof SecretPayloadError) {
+      await markCredentialResult(row.id, 'Credencial armazenada ilegível.');
+      return fail(
+        400,
+        'bad_credential',
+        'A credencial gravada para este site não pôde ser lida. Cadastre a Application Password novamente.',
+      );
+    }
+    throw err; // CredentialsKeyError e o resto sobem: é falha de servidor.
+  }
+
   if (!credential) {
     return fail(
       400,
@@ -1386,7 +1407,25 @@ E substitua o corpo do `worker()` por:
 ```ts
   async function worker() {
     for (let site = queue.shift(); site; site = queue.shift()) {
-      const credential = await getCredential(site.id);
+      // Credencial ilegível é problema de um site; não pode derrubar a
+      // varredura dos outros. Já CredentialsKeyError sobe e aborta o cron
+      // inteiro de propósito: sem a chave, nenhum site seria varrido mesmo.
+      let credential;
+      try {
+        credential = await getCredential(site.id);
+      } catch (err) {
+        if (!(err instanceof SecretPayloadError)) throw err;
+        await saveScan({
+          siteId: site.id,
+          source: 'cron',
+          errorKind: 'bad_credential',
+          errorMessage: 'Credencial armazenada ilegível.',
+        });
+        await markCredentialResult(site.id, 'Credencial armazenada ilegível.');
+        results.push({ url: site.url, ok: false, error: 'credencial ilegível' });
+        continue;
+      }
+
       if (!credential) {
         await saveScan({
           siteId: site.id,
@@ -1698,6 +1737,17 @@ E acrescente os três casos ao `switch (kind)` de `errorCopy`, antes do `default
           <>
             Este site ainda não tem Application Password cadastrada. Gere uma no wp-admin
             em Usuários → Perfil → Senhas de aplicativo e cadastre aqui.
+          </>
+        ),
+      };
+    case 'bad_credential':
+      return {
+        title: 'Credencial ilegível',
+        body: (
+          <>
+            A credencial gravada para este site não pôde ser decifrada — provavelmente a
+            <code>CREDENTIALS_KEY</code> do servidor mudou depois que ela foi salva.
+            Cadastre a Application Password novamente.
           </>
         ),
       };
