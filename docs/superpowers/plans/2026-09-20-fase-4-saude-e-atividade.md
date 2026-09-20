@@ -161,22 +161,46 @@ mostra.
 
 ---
 
-### Task 5: O 401 passa a dizer a causa
+### Task 5: O 401 passa a ordenar as causas prováveis
 
-**Files:** `src/components/States.tsx`, `src/app/api/plugins/route.ts`
+**Files:** `src/components/States.tsx`, `src/components/CredentialForm.tsx`, `src/app/api/plugins/route.ts`
 
-Hoje um 401 devolve "Credencial recusada" e uma copy que **lista duas causas possíveis**
-sem saber qual é. O teste `authorization-header` sabe.
+> **O plano original desta task era impossível, e o teste provou.** A ideia era chamar
+> `authorization-header` para descobrir por que a autenticação falhou. Não funciona:
+> esse endpoint também exige autenticação, então quando a credencial é recusada ele é
+> recusado junto (401 `rest_forbidden`).
+>
+> O plano B também caiu. Medido contra WordPress real, o core devolve **a mesma
+> resposta** — `rest_cannot_view_plugins`, 401 — para sem credencial, senha errada e
+> usuário inexistente. Não há nada no corpo que separe os casos.
+>
+> **Conclusão: não dá para diagnosticar um 401 de fora.** Esta task entrega o que é
+> honesto no lugar disso.
 
-Quando a varredura falhar com `unauthorized`, tente esse teste isolado (ele não exige
-autenticação bem-sucedida para ser informativo — se o header está sendo descartado, é
-exatamente isso que ele reporta). Se apontar problema no header, a tela deve dizer que
-o servidor está descartando `Authorization` e que a correção é uma regra no `.htaccess`
-— em vez de sugerir que a senha pode estar errada.
+O sinal que temos não está na resposta, está no histórico: `site_credentials.last_verified_at`.
 
-Se não for possível determinar, mantenha a copy atual. **Não adivinhe.**
+- **Credencial nunca funcionou** (`last_verified_at IS NULL`) — é primeira configuração.
+  A causa mais comum aqui é o servidor descartando o cabeçalho `Authorization` antes do
+  PHP, típico de Apache/CGI. A copy deve mandar verificar isso **primeiro**, com a regra
+  de `.htaccess`, e só depois sugerir reconferir a senha.
+- **Já funcionou e parou** — senha revogada no WordPress é a hipótese mais provável, mas
+  mudança de configuração do servidor também cabe. A copy cita as duas, nessa ordem, e
+  informa desde quando funcionava.
 
-- [ ] Commit: `feat: diagnose 401 with the authorization-header check`
+`getCredential` não devolve `last_verified_at`; `credentialStatus` devolve. A rota
+precisa carregar esse dado no caminho de erro `unauthorized` e mandá-lo para a UI —
+acrescente um campo opcional ao payload de erro, ou use o `detail` que o
+`ApiErrorPayload` já tem.
+
+**A copy não pode afirmar qual é a causa.** Ela ordena probabilidade e diz o que
+testar. Prometer diagnóstico que não temos seria repetir o defeito que a Fase 1 passou
+inteira corrigindo.
+
+O teste `authorization-header` continua valioso onde ele de fato funciona: num site cuja
+credencial **está** funcionando, ele avisa que a configuração do servidor está frágil
+antes de a autenticação quebrar. Isso já está entregue na aba Saúde (Task 4).
+
+- [ ] Commit: `feat: rank the likely causes of a 401 using credential history`
 
 ---
 
