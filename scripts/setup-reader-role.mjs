@@ -10,10 +10,9 @@ import { join } from 'node:path';
 import { neon } from '@neondatabase/serverless';
 
 const ROLE = 'dash_f2f_reader';
+// Lista de permissão: é assim, e só assim, que uma tabela nova vira legível
+// pelo MCP. Ver o REVOKE ALL + ALTER DEFAULT PRIVILEGES abaixo.
 const READ_TABLES = ['app_users', 'sites', 'scans', 'scan_plugins'];
-// Tabelas que o MCP NUNCA pode ler. O ALTER DEFAULT PRIVILEGES abaixo concede
-// SELECT em toda tabela nova; estas precisam de revogação explícita, sempre.
-const FORBIDDEN_TABLES = ['site_credentials', 'api_tokens'];
 const ENV_PATH = join(process.cwd(), '.env.local');
 
 const adminUrl = process.env.DATABASE_URL;
@@ -43,28 +42,26 @@ if (!existing) {
   console.log(`role ${ROLE} já existe e DATABASE_URL_MCP já está no .env.local`);
 }
 
-// Grants: SELECT e nada mais. Idempotente.
+// Grants: negado por padrão, liberado só para o que está em READ_TABLES.
+// Idempotente — pode rodar de novo a qualquer momento sem efeito colateral.
+//
+// 1) Zera qualquer privilégio que a role tenha hoje em qualquer tabela do
+//    schema, inclusive o que tiver sido concedido manualmente ou por uma
+//    versão antiga deste script.
+await sql.query(`REVOKE ALL ON ALL TABLES IN SCHEMA public FROM ${ROLE}`);
+// 2) A role ainda precisa enxergar o schema para fazer SELECT nele.
 await sql.query(`GRANT USAGE ON SCHEMA public TO ${ROLE}`);
+// 3) Concede SELECT só nas tabelas explicitamente permitidas.
 for (const table of READ_TABLES) {
   await sql.query(`GRANT SELECT ON TABLE ${table} TO ${ROLE}`);
 }
-await sql.query(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO ${ROLE}`);
-// Garantia explícita: nada de escrita, nem por herança de PUBLIC.
-for (const table of READ_TABLES) {
-  await sql.query(`REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON TABLE ${table} FROM ${ROLE}`);
-}
+// 4) O padrão para tabela futura passa a ser "negado". Antes, ALTER DEFAULT
+//    PRIVILEGES concedia SELECT em toda tabela nova, e cada tabela de
+//    segredo precisava lembrar de se defender (ver sql/004_site_credentials.sql).
+//    Invertido: uma tabela só vira legível quando alguém adiciona seu nome em
+//    READ_TABLES, explicitamente.
+await sql.query(`ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE SELECT ON TABLES FROM ${ROLE}`);
 console.log(`grants aplicados em: ${READ_TABLES.join(', ')}`);
-
-// Revogação total nas tabelas de segredo — inclusive o SELECT herdado do
-// ALTER DEFAULT PRIVILEGES. Tolerante a tabela ainda não criada.
-for (const table of FORBIDDEN_TABLES) {
-  try {
-    await sql.query(`REVOKE ALL ON TABLE ${table} FROM ${ROLE}`);
-    console.log(`· ${table}: acesso revogado do ${ROLE}`);
-  } catch (err) {
-    if (!/does not exist/i.test(err.message)) throw err;
-  }
-}
 
 if (password) {
   // Monta a URL do reader trocando as credenciais da URL de admin.
