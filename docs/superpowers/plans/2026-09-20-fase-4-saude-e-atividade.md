@@ -386,7 +386,18 @@ só muda por ADR novo.
 
 **Riscos conhecidos:**
 - `directory-sizes` pode não funcionar; tratado como best-effort e fora do escopo.
-- Seis requisições a mais por varredura (Site Health) somadas às de tema no wp.org
-  aumentam o tempo de scan. O orçamento de `latestVersions` já existe; medir e, se
-  apertar, paralelizar os testes de saúde (já são paralelos) ou reduzir a frequência
-  deles para menos que a das varreduras.
+- **Custo de tempo, medido e confirmado (Task 3b).** Os testes de saúde passaram a
+  rodar sequencialmente, com 20s por teste e orçamento de 45s — decisão deliberada
+  para não martelar o site de produção do cliente com seis diagnósticos concorrentes.
+  Custo real medido: **41,8s de wall-clock** para uma varredura de um site.
+
+  O cron roda 4 sites em paralelo com `maxDuration = 300`. A conta: 20 sites viram
+  5 lotes × ~45s ≈ 225s **só de Site Health**, antes de plugins, temas, usuários,
+  settings e as consultas ao wordpress.org. Com frota de 20+ sites isso estoura.
+
+  **Não resolver esticando o orçamento.** As saídas honestas são: (a) coletar saúde
+  com frequência menor que o inventário — o estado de saúde muda devagar, e varrer
+  plugins diariamente não exige diagnosticar loopback diariamente; (b) uma rota de
+  cron própria para saúde, em horário separado; (c) `https-status` fora do conjunto
+  padrão, já que é o mais lento e o menos acionável. Decidir antes da frota crescer,
+  não depois do primeiro timeout em produção.
