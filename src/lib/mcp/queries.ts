@@ -256,3 +256,35 @@ export async function failingSites(ownerId: string): Promise<FailingSite[]> {
      ORDER BY ls.fetched_at DESC
   `) as FailingSite[];
 }
+
+export type ThemeRow = { stylesheet: string; name: string; version: string; is_active: boolean };
+
+/** Temas do scan mais recente de um site. */
+export async function latestThemes(ownerId: string, siteId: string): Promise<ThemeRow[]> {
+  const sql = db();
+  return (await sql`
+    SELECT t.stylesheet, t.name, t.version, t.is_active
+      FROM scan_themes t
+      JOIN scans sc ON sc.id = t.scan_id
+      JOIN sites s ON s.id = sc.site_id
+     WHERE s.owner_id = ${ownerId} AND s.id = ${siteId}
+       AND sc.id = (SELECT id FROM scans WHERE site_id = ${siteId} AND ok = true ORDER BY fetched_at DESC LIMIT 1)
+     ORDER BY t.is_active DESC, t.name
+  `) as ThemeRow[];
+}
+
+export type UserRow = { wp_user_id: number; slug: string; name: string; roles: string };
+
+/** Usuários do scan mais recente — útil para auditar quantos admins existem. */
+export async function latestUsers(ownerId: string, siteId: string): Promise<UserRow[]> {
+  const sql = db();
+  return (await sql`
+    SELECT u.wp_user_id, u.slug, u.name, u.roles
+      FROM scan_users u
+      JOIN scans sc ON sc.id = u.scan_id
+      JOIN sites s ON s.id = sc.site_id
+     WHERE s.owner_id = ${ownerId} AND s.id = ${siteId}
+       AND sc.id = (SELECT id FROM scans WHERE site_id = ${siteId} AND ok = true ORDER BY fetched_at DESC LIMIT 1)
+     ORDER BY u.wp_user_id
+  `) as UserRow[];
+}

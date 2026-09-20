@@ -20,6 +20,8 @@ const EXPECTED_TOOLS = [
   'fleet_summary',
   'get_scan_history',
   'get_site_status',
+  'get_site_themes',
+  'get_site_users',
   'list_failing_sites',
   'list_outdated',
   'list_sites',
@@ -40,7 +42,7 @@ async function connect(env = undefined) {
   return client;
 }
 
-test('servidor MCP responde ao handshake e expõe as 8 tools', async (t) => {
+test('servidor MCP responde ao handshake e expõe as 10 tools', async (t) => {
   assert.ok(process.env.DASH_F2F_OWNER_EMAIL, 'defina DASH_F2F_OWNER_EMAIL no .env.local');
   const client = await connect();
   t.after(() => client.close());
