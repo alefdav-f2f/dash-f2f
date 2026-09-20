@@ -94,5 +94,9 @@ function normalizePlugin(raw: unknown): Plugin {
     is_active: Boolean(p.is_active),
     has_update: Boolean(p.has_update),
     new_version: p.new_version != null ? String(p.new_version) : '',
+    // Transitório: o coletor antigo lê has_update direto do endpoint
+    // customizado, então a origem é o próprio site, não o wordpress.org.
+    // Este arquivo inteiro sai na Task 18.
+    update_source: 'wporg' as const,
   };
 }
