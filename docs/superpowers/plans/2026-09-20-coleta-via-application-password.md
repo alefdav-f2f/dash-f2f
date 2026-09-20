@@ -1179,8 +1179,8 @@ describe('mergePluginVersions', () => {
   });
 
   it('versão instalada desconhecida NUNCA vira desatualizado', () => {
-    // Regressão: '—' como dado fazia parse() ler versão 0, e 0 < 6 marcava
-    // pendência em plugin cuja versão o site nem informou.
+    // Regressão: versão ilegível fazia parse() ler 0, e 0 < 6 marcava pendência
+    // em plugin cuja versão o site nem informou. Ver isComparableVersion.
     const merged = mergePluginVersions(raw, new Map([['sem-versao', '6.0.0']]));
     expect(merged.find((p) => p.name === 'Sem Versão')).toMatchObject({
       version: '—',
@@ -1212,7 +1212,7 @@ Create `src/lib/inventory.ts`:
 // Junta o inventário cru do WordPress com as versões do wordpress.org.
 // Puro: recebe as duas listas e devolve o tipo Plugin que a UI já consome.
 
-import { isOutdated } from './version';
+import { isComparableVersion, isOutdated } from './version';
 import type { Plugin, RawPlugin } from './types';
 
 /**
@@ -1227,12 +1227,15 @@ export function mergePluginVersions(
     const installed = plugin.version;
     const published = latest.get(plugin.slug) ?? null;
 
-    // Duas incertezas diferentes, mesmo veredito: sem versão instalada (o site
-    // não informou) ou sem versão publicada (plugin fora do repositório oficial).
-    // Em nenhum dos dois casos dá para afirmar nada — 'unknown' é honesto,
-    // 'em dia' seria mentira, e 'desatualizado' seria pior ainda.
-    const comparable = installed !== null && published !== null;
-    const outdated = comparable && isOutdated(installed, published);
+    // Duas incertezas diferentes, mesmo veredito: versão instalada ilegível (o
+    // site não informou, ou informou lixo) ou versão publicada ausente (plugin
+    // fora do repositório oficial). Em nenhum dos dois casos dá para afirmar
+    // nada — 'unknown' é honesto, 'em dia' seria mentira, e 'desatualizado'
+    // seria pior ainda. `isComparableVersion` é o que separa "não sei" de zero.
+    const comparable = isComparableVersion(installed) && published !== null;
+    // isOutdated já recusa sozinho versão ilegível e publicada ausente, então
+    // não precisa de guarda aqui nem de asserção de não-nulo.
+    const outdated = isOutdated(installed ?? '', published);
 
     return {
       file: plugin.file,
