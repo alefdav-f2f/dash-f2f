@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fetchFromWporg, parseWporgResponse } from './wporg';
+import { fetchFromWporg, fetchThemeFromWporg, parseWporgResponse } from './wporg';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -46,6 +46,37 @@ describe('fetchFromWporg', () => {
   it('falha de rede NÃO é fato', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNRESET')));
     expect(await fetchFromWporg('elementor')).toEqual({ known: false });
+  });
+});
+
+describe('fetchThemeFromWporg', () => {
+  it('200 com versão é fato', async () => {
+    vi.stubGlobal('fetch', respond({ version: '1.5' }));
+    expect(await fetchThemeFromWporg('twentytwentyfive')).toEqual({ known: true, version: '1.5' });
+  });
+
+  it('404 com corpo false é fato: o tema não está no repositório', async () => {
+    vi.stubGlobal('fetch', respond(false, 404));
+    expect(await fetchThemeFromWporg('tema-que-nao-existe')).toEqual({ known: true, version: null });
+  });
+
+  it('500 NÃO é fato — não sabemos, e isso não pode virar cache', async () => {
+    vi.stubGlobal('fetch', respond({}, 500));
+    expect(await fetchThemeFromWporg('astra')).toEqual({ known: false });
+  });
+
+  it('falha de rede NÃO é fato', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNRESET')));
+    expect(await fetchThemeFromWporg('astra')).toEqual({ known: false });
+  });
+
+  it('consulta o endpoint de temas, não o de plugins', async () => {
+    const fetchMock = respond({ version: '1.5' });
+    vi.stubGlobal('fetch', fetchMock);
+    await fetchThemeFromWporg('twentytwentyfive');
+    const url = String(fetchMock.mock.calls[0][0]);
+    expect(url).toContain('themes/info/1.1');
+    expect(url).toContain('twentytwentyfive');
   });
 });
 

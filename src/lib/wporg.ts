@@ -22,7 +22,8 @@ function sql(): NeonQueryFunction<false, false> {
   return cached;
 }
 
-const ENDPOINT = 'https://api.wordpress.org/plugins/info/1.0/';
+const PLUGIN_ENDPOINT = 'https://api.wordpress.org/plugins/info/1.0/';
+const THEME_ENDPOINT = 'https://api.wordpress.org/themes/info/1.1/';
 const TTL_HOURS = 12;
 const TIMEOUT_MS = 8_000;
 /** Teto de tempo gasto consultando o wp.org por varredura. Ver o laço abaixo. */
@@ -47,34 +48,53 @@ export function parseWporgResponse(data: unknown): string | null {
  */
 type Lookup = { known: true; version: string | null } | { known: false };
 
-/** Exportada para teste: a distinção known/unknown é o que protege o cache. */
-export async function fetchFromWporg(slug: string): Promise<Lookup> {
+/** Faz o GET no wp.org e traduz a resposta para {@link Lookup}. Compartilhado
+ * por plugins e temas: só muda a URL. */
+async function fetchWporg(url: string): Promise<Lookup> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
-    const response = await fetch(`${ENDPOINT}${encodeURIComponent(slug)}.json`, {
+    const response = await fetch(url, {
       method: 'GET',
       headers: { Accept: 'application/json', 'User-Agent': 'dash-f2f/2.0' },
       cache: 'no-store',
       signal: controller.signal,
     });
-    // 404 é resposta legítima: o plugin não está no repositório.
+    // 404 é resposta legítima: o slug não está no repositório (plugin ou tema).
     if (response.status === 404) return { known: true, version: null };
     if (!response.ok) return { known: false };
     return { known: true, version: parseWporgResponse(await response.json()) };
   } catch {
-    // Rede ou timeout: indisponibilidade nossa, não ausência do plugin.
+    // Rede ou timeout: indisponibilidade nossa, não ausência do item.
     return { known: false };
   } finally {
     clearTimeout(timer);
   }
 }
 
+/** Exportada para teste: a distinção known/unknown é o que protege o cache. */
+export async function fetchFromWporg(slug: string): Promise<Lookup> {
+  return fetchWporg(`${PLUGIN_ENDPOINT}${encodeURIComponent(slug)}.json`);
+}
+
+/** Exportada para teste: mesma distinção known/unknown, endpoint de temas. */
+export async function fetchThemeFromWporg(slug: string): Promise<Lookup> {
+  return fetchWporg(
+    `${THEME_ENDPOINT}?action=theme_information&request[slug]=${encodeURIComponent(slug)}&request[fields][sections]=false`,
+  );
+}
+
 /**
- * Versão publicada de cada slug. Lê do cache, busca só o que venceu.
- * @returns mapa slug -> versão publicada (ou null quando não há dado)
+ * Corpo compartilhado por `latestVersions` e `latestThemeVersions`: lê o cache
+ * por (kind, slug), busca só o que venceu, respeitando TTL e BUDGET_MS, e só
+ * grava no cache resposta que o wp.org de fato deu (ver nota em `fetchWporg`
+ * sobre known/unknown).
  */
-export async function latestVersions(slugs: string[]): Promise<Map<string, string | null>> {
+async function latestByKind(
+  kind: 'plugin' | 'theme',
+  slugs: string[],
+  fetcher: (slug: string) => Promise<Lookup>,
+): Promise<Map<string, string | null>> {
   const unique = [...new Set(slugs.filter(Boolean))];
   const result = new Map<string, string | null>();
   if (unique.length === 0) return result;
@@ -82,7 +102,8 @@ export async function latestVersions(slugs: string[]): Promise<Map<string, strin
   const cachedRows = (await sql()`
     SELECT slug, latest_version, checked_at
       FROM wporg_versions
-     WHERE slug = ANY(${unique}::text[])
+     WHERE kind = ${kind}
+       AND slug = ANY(${unique}::text[])
        AND checked_at > now() - ${`${TTL_HOURS} hours`}::interval
   `) as Array<{ slug: string; latest_version: string | null }>;
 
@@ -104,21 +125,38 @@ export async function latestVersions(slugs: string[]): Promise<Map<string, strin
       continue;
     }
 
-    const lookup = await fetchFromWporg(slug);
+    const lookup = await fetcher(slug);
     result.set(slug, lookup.known ? lookup.version : null);
 
     // Só grava o que o wp.org afirmou. Falha de consulta não vira cache:
-    // caso contrário um timeout de um segundo faria o plugin aparecer como
+    // caso contrário um timeout de um segundo faria o item aparecer como
     // "atualização desconhecida" pelas próximas 12 horas.
     if (lookup.known) {
       await sql()`
-        INSERT INTO wporg_versions (slug, latest_version, checked_at)
-        VALUES (${slug}, ${lookup.version}, now())
-        ON CONFLICT (slug) DO UPDATE
+        INSERT INTO wporg_versions (kind, slug, latest_version, checked_at)
+        VALUES (${kind}, ${slug}, ${lookup.version}, now())
+        ON CONFLICT (kind, slug) DO UPDATE
            SET latest_version = EXCLUDED.latest_version, checked_at = now()
       `;
     }
   }
 
   return result;
+}
+
+/**
+ * Versão publicada de cada slug de plugin. Lê do cache, busca só o que venceu.
+ * @returns mapa slug -> versão publicada (ou null quando não há dado)
+ */
+export async function latestVersions(slugs: string[]): Promise<Map<string, string | null>> {
+  return latestByKind('plugin', slugs, fetchFromWporg);
+}
+
+/**
+ * Versão publicada de cada slug de tema. Mesmo cache, mesmo TTL, mesmo
+ * orçamento de tempo — ver `latestByKind`.
+ * @returns mapa slug -> versão publicada (ou null quando não há dado)
+ */
+export async function latestThemeVersions(slugs: string[]): Promise<Map<string, string | null>> {
+  return latestByKind('theme', slugs, fetchThemeFromWporg);
 }
