@@ -65,6 +65,11 @@ export type PluginsResponse = {
   scanId: string;
   fetchedAt: string;
   plugins: Plugin[];
+  themes: Theme[];
+  users: WpUser[];
+  settings: WpSettings | null;
+  /** Recursos que não puderam ser lidos nesta varredura, com o motivo. */
+  failures: Partial<Record<InventoryResource, string>>;
   /** Mudanças desde a varredura anterior (vazio na primeira). */
   changes: import('./diff').Change[];
   previousScanAt: string | null;

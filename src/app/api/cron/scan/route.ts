@@ -3,8 +3,8 @@
 // `Authorization: Bearer <CRON_SECRET>` nas invocações de cron.
 
 import { NextRequest, NextResponse } from 'next/server';
-import { listAllSites, saveScan } from '@/lib/db';
-import { collectPlugins, WpError } from '@/lib/wp-rest';
+import { listAllSites, saveInventoryExtras, saveScan } from '@/lib/db';
+import { collectInventory, WpError } from '@/lib/wp-rest';
 import { getCredential, markCredentialResult } from '@/lib/credentials';
 import { SecretPayloadError } from '@/lib/crypto';
 
@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
   }
 
   const sites = await listAllSites();
-  const results: Array<{ url: string; ok: boolean; outdated?: number; error?: string }> = [];
+  const results: Array<{ url: string; ok: boolean; outdated?: number; failedResources?: number; error?: string }> = [];
 
   // Fila simples com concorrência limitada: um lote de sites lentos não pode
   // estourar o tempo da função.
@@ -62,10 +62,19 @@ export async function GET(request: NextRequest) {
       }
 
       try {
-        const plugins = await collectPlugins(site.url, credential);
-        await saveScan({ siteId: site.id, source: 'cron', plugins });
+        const { plugins, themes, users, settings, failures } = await collectInventory(site.url, credential);
+        const scanId = await saveScan({ siteId: site.id, source: 'cron', plugins });
+        await saveInventoryExtras(scanId, { themes, users, settings });
         await markCredentialResult(site.id, null);
-        results.push({ url: site.url, ok: true, outdated: plugins.filter((p) => p.has_update).length });
+        results.push({
+          url: site.url,
+          ok: true,
+          outdated: plugins.filter((p) => p.has_update).length,
+          // Best-effort: themes/users/settings podem falhar sem derrubar o
+          // scan. Contar aqui deixa o resumo do cron flagrar um site que está
+          // perdendo cobertura, sem exigir abrir cada scan para descobrir.
+          failedResources: Object.keys(failures).length || undefined,
+        });
       } catch (err) {
         const wpErr = err instanceof WpError ? err : new WpError('network', 502, 'Erro inesperado.');
         await saveScan({ siteId: site.id, source: 'cron', errorKind: wpErr.kind, errorMessage: wpErr.message });

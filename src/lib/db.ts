@@ -4,7 +4,7 @@ import 'server-only';
 // nenhuma query de site aceita ser chamada sem o dono.
 
 import { neon } from '@neondatabase/serverless';
-import type { Plugin } from './types';
+import type { Plugin, SiteInventory, Theme, WpSettings, WpUser } from './types';
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -189,4 +189,67 @@ export async function outdatedHistory(siteId: string, limit = 30): Promise<Array
      ORDER BY fetched_at DESC LIMIT ${limit}
   `) as Array<{ fetched_at: string; outdated: number }>;
   return rows.reverse();
+}
+
+/** Snapshots dos recursos além de plugins. Chamado logo após saveScan. */
+export async function saveInventoryExtras(
+  scanId: string,
+  { themes, users, settings }: Pick<SiteInventory, 'themes' | 'users' | 'settings'>,
+): Promise<void> {
+  if (themes.length > 0) {
+    await sql`
+      INSERT INTO scan_themes (scan_id, stylesheet, name, version, is_active)
+      SELECT ${scanId}, * FROM unnest(
+        ${themes.map((t) => t.stylesheet)}::text[],
+        ${themes.map((t) => t.name)}::text[],
+        ${themes.map((t) => t.version)}::text[],
+        ${themes.map((t) => t.is_active)}::boolean[]
+      )
+      ON CONFLICT (scan_id, stylesheet) DO NOTHING
+    `;
+  }
+
+  if (users.length > 0) {
+    await sql`
+      INSERT INTO scan_users (scan_id, wp_user_id, slug, name, roles)
+      SELECT ${scanId}, * FROM unnest(
+        ${users.map((u) => u.wp_user_id)}::integer[],
+        ${users.map((u) => u.slug)}::text[],
+        ${users.map((u) => u.name)}::text[],
+        ${users.map((u) => u.roles)}::text[]
+      )
+      ON CONFLICT (scan_id, wp_user_id) DO NOTHING
+    `;
+  }
+
+  if (settings) {
+    await sql`
+      INSERT INTO scan_settings (scan_id, title, description, url, admin_email, timezone, language)
+      VALUES (${scanId}, ${settings.title}, ${settings.description}, ${settings.url},
+              ${settings.admin_email}, ${settings.timezone}, ${settings.language})
+      ON CONFLICT (scan_id) DO NOTHING
+    `;
+  }
+}
+
+export async function scanThemes(scanId: string): Promise<Theme[]> {
+  return (await sql`
+    SELECT stylesheet, name, version, is_active FROM scan_themes
+     WHERE scan_id = ${scanId} ORDER BY is_active DESC, name
+  `) as Theme[];
+}
+
+export async function scanUsers(scanId: string): Promise<WpUser[]> {
+  return (await sql`
+    SELECT wp_user_id, slug, name, roles FROM scan_users
+     WHERE scan_id = ${scanId} ORDER BY wp_user_id
+  `) as WpUser[];
+}
+
+export async function scanSettings(scanId: string): Promise<WpSettings | null> {
+  const rows = (await sql`
+    SELECT title, description, url, admin_email, timezone, language
+      FROM scan_settings WHERE scan_id = ${scanId}
+  `) as WpSettings[];
+  return rows[0] ?? null;
 }

@@ -6,10 +6,10 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { currentUser } from '@/lib/auth';
-import { findSite, recentScans, saveScan, scanPlugins } from '@/lib/db';
+import { findSite, recentScans, saveInventoryExtras, saveScan, scanPlugins } from '@/lib/db';
 import { diffScans } from '@/lib/diff';
 import { InvalidSiteUrlError, normalizeSiteUrl } from '@/lib/site-url';
-import { collectPlugins, WpError } from '@/lib/wp-rest';
+import { collectInventory, WpError } from '@/lib/wp-rest';
 import { getCredential, markCredentialResult } from '@/lib/credentials';
 import { SecretPayloadError } from '@/lib/crypto';
 import type { ApiErrorKind, ApiErrorPayload } from '@/lib/types';
@@ -69,9 +69,9 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  let plugins;
+  let inventory;
   try {
-    plugins = await collectPlugins(site, credential);
+    inventory = await collectInventory(site, credential);
     await markCredentialResult(row.id, null);
   } catch (err) {
     const wpErr = err instanceof WpError ? err : new WpError('network', 502, 'Erro inesperado ao consultar o site.');
@@ -81,7 +81,10 @@ export async function GET(request: NextRequest) {
     return fail(wpErr.status, wpErr.kind, wpErr.message, wpErr.detail);
   }
 
+  const { plugins, themes, users, settings, failures } = inventory;
+
   const scanId = await saveScan({ siteId: row.id, source: 'manual', plugins });
+  await saveInventoryExtras(scanId, { themes, users, settings });
 
   return NextResponse.json(
     {
@@ -89,6 +92,10 @@ export async function GET(request: NextRequest) {
       scanId,
       fetchedAt: new Date().toISOString(),
       plugins,
+      themes,
+      users,
+      settings,
+      failures,
       changes: diffScans(plugins, previousPlugins),
       previousScanAt: previousScan?.fetched_at ?? null,
     },
