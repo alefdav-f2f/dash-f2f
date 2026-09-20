@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { mergePluginVersions } from './inventory';
-import type { RawPlugin } from './types';
+import { mergePluginVersions, mergeThemeVersions } from './inventory';
+import type { RawPlugin, RawTheme } from './types';
 
 const raw: RawPlugin[] = [
   { file: 'elementor/elementor', name: 'Elementor', version: '3.21.5', is_active: true, slug: 'elementor' },
@@ -60,5 +60,63 @@ describe('mergePluginVersions', () => {
     expect(elementor.file).toBe('elementor/elementor');
     expect(elementor.version).toBe('3.21.5');
     expect(elementor.is_active).toBe(true);
+  });
+});
+
+const rawThemes: RawTheme[] = [
+  { stylesheet: 'twentytwentyfive', name: 'Twenty Twenty-Five', version: '1.2', is_active: true },
+  { stylesheet: 'twentytwentyfour', name: 'Twenty Twenty-Four', version: '1.2', is_active: false },
+  { stylesheet: 'tema-custom', name: 'Tema Custom', version: '2.0.0', is_active: false },
+  { stylesheet: 'tema-sem-versao', name: 'Tema Sem Versão', version: null, is_active: false },
+];
+
+describe('mergeThemeVersions', () => {
+  it('marca desatualizado quando o wp.org tem versão maior', () => {
+    const merged = mergeThemeVersions(rawThemes, new Map([['twentytwentyfive', '1.5']]));
+    expect(merged.find((t) => t.stylesheet === 'twentytwentyfive')).toMatchObject({
+      has_update: true,
+      new_version: '1.5',
+      update_source: 'wporg',
+    });
+  });
+
+  it('em dia quando as versões batem', () => {
+    const merged = mergeThemeVersions(rawThemes, new Map([['twentytwentyfour', '1.2']]));
+    expect(merged.find((t) => t.stylesheet === 'twentytwentyfour')).toMatchObject({
+      has_update: false,
+      new_version: '',
+      update_source: 'wporg',
+    });
+  });
+
+  it('tema fora do repositório fica unknown e NUNCA vira desatualizado', () => {
+    const merged = mergeThemeVersions(rawThemes, new Map([['tema-custom', null]]));
+    expect(merged.find((t) => t.stylesheet === 'tema-custom')).toMatchObject({
+      has_update: false,
+      new_version: '',
+      update_source: 'unknown',
+    });
+  });
+
+  it('stylesheet ausente do mapa também é unknown', () => {
+    const merged = mergeThemeVersions(rawThemes, new Map());
+    expect(merged.every((t) => t.update_source === 'unknown')).toBe(true);
+  });
+
+  it('versão instalada desconhecida NUNCA vira desatualizado', () => {
+    const merged = mergeThemeVersions(rawThemes, new Map([['tema-sem-versao', '3.0.0']]));
+    expect(merged.find((t) => t.stylesheet === 'tema-sem-versao')).toMatchObject({
+      version: '—',
+      has_update: false,
+      new_version: '',
+      update_source: 'unknown',
+    });
+  });
+
+  it('preserva stylesheet, nome e estado ativo', () => {
+    const [primeiro] = mergeThemeVersions(rawThemes, new Map([['twentytwentyfive', '1.5']]));
+    expect(primeiro.stylesheet).toBe('twentytwentyfive');
+    expect(primeiro.name).toBe('Twenty Twenty-Five');
+    expect(primeiro.is_active).toBe(true);
   });
 });

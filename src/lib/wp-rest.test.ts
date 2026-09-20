@@ -15,6 +15,7 @@ import {
 // dependência de outra função, não o que está sob teste, então é stubada.
 vi.mock('./wporg', () => ({
   latestVersions: vi.fn().mockResolvedValue(new Map()),
+  latestThemeVersions: vi.fn().mockResolvedValue(new Map()),
 }));
 
 const CRED = { user: 'admin', password: 'abcd EFGH ijkl MNOP qrst UVWX' };
@@ -155,6 +156,16 @@ describe('recursos adicionais', () => {
       { stylesheet: 'twentytwentyfour', name: 'Twenty Twenty-Four', version: '1.2', is_active: true },
       { stylesheet: 'astra', name: 'Astra', version: '4.6.0', is_active: false },
     ]);
+  });
+
+  it('versão de tema ausente ou vazia vira null, nunca o placeholder de exibição', async () => {
+    vi.stubGlobal('fetch', mockFetch(200, [
+      { stylesheet: 'sem-versao', name: { raw: 'Sem Versão' }, status: 'active' },
+      { stylesheet: 'vazia', name: { raw: 'Vazia' }, version: '', status: 'inactive' },
+    ]));
+
+    const themes = await fetchThemes('https://exemplo.com', CRED);
+    expect(themes.map((t) => t.version)).toEqual([null, null]);
   });
 
   it('usuários trazem papéis achatados em string', async () => {

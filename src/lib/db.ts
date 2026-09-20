@@ -198,12 +198,15 @@ export async function saveInventoryExtras(
 ): Promise<void> {
   if (themes.length > 0) {
     await sql`
-      INSERT INTO scan_themes (scan_id, stylesheet, name, version, is_active)
+      INSERT INTO scan_themes (scan_id, stylesheet, name, version, is_active, has_update, new_version, update_source)
       SELECT ${scanId}, * FROM unnest(
         ${themes.map((t) => t.stylesheet)}::text[],
         ${themes.map((t) => t.name)}::text[],
         ${themes.map((t) => t.version)}::text[],
-        ${themes.map((t) => t.is_active)}::boolean[]
+        ${themes.map((t) => t.is_active)}::boolean[],
+        ${themes.map((t) => t.has_update)}::boolean[],
+        ${themes.map((t) => t.new_version)}::text[],
+        ${themes.map((t) => t.update_source)}::text[]
       )
       ON CONFLICT (scan_id, stylesheet) DO NOTHING
     `;
@@ -247,7 +250,8 @@ export async function saveInventoryExtras(
 
 export async function scanThemes(scanId: string): Promise<Theme[]> {
   return (await sql`
-    SELECT stylesheet, name, version, is_active FROM scan_themes
+    SELECT stylesheet, name, version, is_active, has_update, new_version, update_source
+      FROM scan_themes
      WHERE scan_id = ${scanId} ORDER BY is_active DESC, name
   `) as Theme[];
 }

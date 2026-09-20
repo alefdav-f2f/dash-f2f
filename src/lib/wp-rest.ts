@@ -10,10 +10,10 @@ import 'server-only';
 // credencial e passou a ser garantida por este módulo. Não adicione outro método.
 
 import { isPrivateHost } from './site-url';
-import { latestVersions } from './wporg';
-import { mergePluginVersions } from './inventory';
+import { latestThemeVersions, latestVersions } from './wporg';
+import { mergePluginVersions, mergeThemeVersions } from './inventory';
 import { fetchSiteHealth } from './wp-health';
-import type { ApiErrorKind, HealthCheck, InventoryResource, Plugin, RawPlugin, SiteInventory, Theme, WpSettings, WpUser } from './types';
+import type { ApiErrorKind, HealthCheck, InventoryResource, Plugin, RawPlugin, RawTheme, SiteInventory, Theme, WpSettings, WpUser } from './types';
 import { UNAUTHORIZED_CREDENTIAL_MESSAGE } from './types';
 
 const TIMEOUT_MS = 12_000;
@@ -170,7 +170,8 @@ function flatten(value: unknown): string {
   return '';
 }
 
-export async function fetchThemes(site: string, credential: Credential): Promise<Theme[]> {
+/** Inventário cru de temas. `has_update` NÃO vem daqui — ver src/lib/inventory.ts. */
+export async function fetchThemes(site: string, credential: Credential): Promise<RawTheme[]> {
   const data = await wpGet(site, '/wp-json/wp/v2/themes', credential);
   if (!Array.isArray(data)) throw new WpError('bad_payload', 502, 'A resposta de /wp/v2/themes não é uma lista.');
   return data.map((raw) => {
@@ -178,10 +179,23 @@ export async function fetchThemes(site: string, credential: Credential): Promise
     return {
       stylesheet: typeof t.stylesheet === 'string' ? t.stylesheet : '',
       name: flatten(t.name),
-      version: t.version != null ? String(t.version) : '',
+      // Versão ausente ou vazia vira null, nunca '—' — mesma regra de
+      // normalizeRawPlugin: o placeholder de exibição só aparece na fronteira
+      // de renderização (mergeThemeVersions), nunca como dado.
+      version: t.version != null && String(t.version).trim() ? String(t.version) : null,
       is_active: t.status === 'active',
     };
   });
+}
+
+/**
+ * Varredura completa de temas: lê o site, cruza com o wordpress.org e
+ * devolve o tipo que a UI e o histórico já consomem. Espelha collectPlugins.
+ */
+export async function collectThemes(site: string, credential: Credential): Promise<Theme[]> {
+  const raw = await fetchThemes(site, credential);
+  const latest = await latestThemeVersions(raw.map((t) => t.stylesheet));
+  return mergeThemeVersions(raw, latest);
 }
 
 export async function fetchUsers(site: string, credential: Credential): Promise<WpUser[]> {
@@ -233,7 +247,7 @@ export async function collectInventory(site: string, credential: Credential): Pr
   }
 
   const [themes, users, settings, health] = await Promise.all([
-    attempt('themes', () => fetchThemes(site, credential), [] as Theme[]),
+    attempt('themes', () => collectThemes(site, credential), [] as Theme[]),
     attempt('users', () => fetchUsers(site, credential), [] as WpUser[]),
     attempt('settings', () => fetchSettings(site, credential), null as WpSettings | null),
     attempt('health', () => fetchSiteHealth(site, credential), [] as HealthCheck[]),

@@ -112,11 +112,23 @@ export type CredentialInfo = {
   last_error: string | null;
 };
 
+/** Tema como sai do /wp/v2/themes, antes de cruzar com o wordpress.org. */
+export type RawTheme = {
+  stylesheet: string;
+  name: string;
+  /** `null` quando o site não informou versão — nunca o placeholder de exibição. */
+  version: string | null;
+  is_active: boolean;
+};
+
 export type Theme = {
   stylesheet: string;
   name: string;
   version: string;
   is_active: boolean;
+  has_update: boolean;
+  new_version: string;
+  update_source: UpdateSource;
 };
 
 export type WpUser = {
