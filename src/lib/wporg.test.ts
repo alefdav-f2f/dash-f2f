@@ -48,3 +48,21 @@ describe('fetchFromWporg', () => {
     expect(await fetchFromWporg('elementor')).toEqual({ known: false });
   });
 });
+
+describe('conexão com o banco é preguiçosa', () => {
+  // O import deste arquivo já aconteceu no topo, sem DATABASE_URL setada no
+  // ambiente de teste (vitest roda `npm test` sem --env-file). Se `wporg.ts`
+  // voltasse a criar o client Neon em escopo de módulo, esse import teria
+  // lançado ANTES de qualquer teste rodar — o arquivo inteiro apareceria como
+  // falha de coleta, não como teste vermelho.
+  //
+  // NÃO prova: que `latestVersions` funciona sem banco — ela precisa de um de
+  // verdade, e isso é responsabilidade do teste de integração manual (ver
+  // relatório da tarefa). Só prova que importar o módulo e chamar a função
+  // pura de rede não exige DATABASE_URL.
+  it('DATABASE_URL ausente não impede o uso de fetchFromWporg', async () => {
+    expect(process.env.DATABASE_URL).toBeUndefined();
+    vi.stubGlobal('fetch', respond({ version: '1.2.3' }));
+    expect(await fetchFromWporg('qualquer-plugin')).toEqual({ known: true, version: '1.2.3' });
+  });
+});

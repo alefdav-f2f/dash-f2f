@@ -9,9 +9,19 @@ import 'server-only';
 // ACF Pro e plugin customizado de agência devolvem null — e null NUNCA vira
 // "está em dia", vira update_source: 'unknown' na UI.
 
-import { neon } from '@neondatabase/serverless';
+import { neon, type NeonQueryFunction } from '@neondatabase/serverless';
 
-const sql = neon(process.env.DATABASE_URL!);
+// Conexão preguiçosa: criada só no primeiro uso, não na importação do módulo.
+// Assim os testes puros (parseWporgResponse) e os de rede (fetchFromWporg,
+// com fetch stubado) rodam sem precisar de DATABASE_URL.
+let cached: NeonQueryFunction<false, false> | null = null;
+
+function sql(): NeonQueryFunction<false, false> {
+  if (cached) return cached;
+  cached = neon(process.env.DATABASE_URL!);
+  return cached;
+}
+
 const ENDPOINT = 'https://api.wordpress.org/plugins/info/1.0/';
 const TTL_HOURS = 12;
 const TIMEOUT_MS = 8_000;
@@ -69,14 +79,14 @@ export async function latestVersions(slugs: string[]): Promise<Map<string, strin
   const result = new Map<string, string | null>();
   if (unique.length === 0) return result;
 
-  const cached = (await sql`
+  const cachedRows = (await sql()`
     SELECT slug, latest_version, checked_at
       FROM wporg_versions
      WHERE slug = ANY(${unique}::text[])
        AND checked_at > now() - ${`${TTL_HOURS} hours`}::interval
   `) as Array<{ slug: string; latest_version: string | null }>;
 
-  for (const row of cached) result.set(row.slug, row.latest_version);
+  for (const row of cachedRows) result.set(row.slug, row.latest_version);
 
   const missing = unique.filter((slug) => !result.has(slug));
   if (missing.length === 0) return result;
@@ -101,7 +111,7 @@ export async function latestVersions(slugs: string[]): Promise<Map<string, strin
     // caso contrário um timeout de um segundo faria o plugin aparecer como
     // "atualização desconhecida" pelas próximas 12 horas.
     if (lookup.known) {
-      await sql`
+      await sql()`
         INSERT INTO wporg_versions (slug, latest_version, checked_at)
         VALUES (${slug}, ${lookup.version}, now())
         ON CONFLICT (slug) DO UPDATE
