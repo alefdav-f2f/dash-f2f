@@ -58,7 +58,31 @@ export type ApiErrorPayload = {
   kind: ApiErrorKind;
   message: string;
   detail?: string;
+  /**
+   * Só preenchido quando `kind === 'unauthorized'`: `last_verified_at` da
+   * credencial ANTES desta tentativa falhar — o único sinal que existe para
+   * separar "nunca funcionou" de "funcionava e parou" (ver
+   * src/app/api/plugins/route.ts e src/components/States.tsx).
+   *
+   * Três estados, não dois — por isso é um campo dedicado em vez de reusar
+   * `detail` (que é texto livre, não dado estruturado, e já significa outra
+   * coisa: mensagem técnica crua de erro de rede):
+   *  - campo ausente  → sinal indisponível; a UI não deve adivinhar.
+   *  - `null`         → nunca verificou (primeiro cadastro).
+   *  - string ISO     → verificou pela última vez nesta data.
+   */
+  credentialLastVerifiedAt?: string | null;
 };
+
+/**
+ * Mensagem fixa emitida por `src/lib/wp-rest.ts` quando o WordPress devolve
+ * 401. Exportada aqui — não em `wp-rest.ts`, que é `server-only` e não pode
+ * ser importado por componentes cliente — para que `CredentialForm` consiga
+ * reconhecer este caso específico a partir de `CredentialInfo.last_error`,
+ * que só guarda texto, não o `ApiErrorKind` que gerou o texto.
+ */
+export const UNAUTHORIZED_CREDENTIAL_MESSAGE =
+  'Credencial recusada. A Application Password pode ter sido revogada no WordPress, ou o servidor está descartando o cabeçalho Authorization.';
 
 export type PluginsResponse = {
   site: string;

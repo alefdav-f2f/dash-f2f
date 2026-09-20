@@ -14,6 +14,7 @@ import { latestVersions } from './wporg';
 import { mergePluginVersions } from './inventory';
 import { fetchSiteHealth } from './wp-health';
 import type { ApiErrorKind, HealthCheck, InventoryResource, Plugin, RawPlugin, SiteInventory, Theme, WpSettings, WpUser } from './types';
+import { UNAUTHORIZED_CREDENTIAL_MESSAGE } from './types';
 
 const TIMEOUT_MS = 12_000;
 
@@ -78,11 +79,7 @@ export async function wpGet(site: string, path: string, credential: Credential, 
   }
 
   if (upstream.status === 401) {
-    throw new WpError(
-      'unauthorized',
-      401,
-      'Credencial recusada. A Application Password pode ter sido revogada no WordPress, ou o servidor está descartando o cabeçalho Authorization.',
-    );
+    throw new WpError('unauthorized', 401, UNAUTHORIZED_CREDENTIAL_MESSAGE);
   }
   if (upstream.status === 403) {
     throw new WpError(

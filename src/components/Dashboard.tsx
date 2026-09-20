@@ -36,7 +36,13 @@ type View =
       changes: Change[];
       previousScanAt: string | null;
     }
-  | { status: 'error'; site: string; kind: ApiErrorKind; message: string };
+  | {
+      status: 'error';
+      site: string;
+      kind: ApiErrorKind;
+      message: string;
+      credentialLastVerifiedAt?: string | null;
+    };
 
 type Props = {
   sites: SiteSummary[];
@@ -79,7 +85,13 @@ export function Dashboard({ sites, user }: Props) {
     } catch (err) {
       if (controller.signal.aborted || (err instanceof DOMException && err.name === 'AbortError')) return;
       const apiErr = err instanceof ApiError ? err : new ApiError('network', 'Erro inesperado ao consultar o site.');
-      setView({ status: 'error', site, kind: apiErr.kind, message: apiErr.message });
+      setView({
+        status: 'error',
+        site,
+        kind: apiErr.kind,
+        message: apiErr.message,
+        credentialLastVerifiedAt: apiErr.credentialLastVerifiedAt,
+      });
     }
   }, []);
 
@@ -192,7 +204,13 @@ export function Dashboard({ sites, user }: Props) {
           )}
 
           {view.status === 'loading' && <LoadingState site={view.site} />}
-          {view.status === 'error' && <ErrorState kind={view.kind} message={view.message} />}
+          {view.status === 'error' && (
+            <ErrorState
+              kind={view.kind}
+              message={view.message}
+              credentialLastVerifiedAt={view.credentialLastVerifiedAt}
+            />
+          )}
 
           {view.status === 'ok' && (
             // As quatro abas ficam sempre visíveis, mesmo com zero plugins: um

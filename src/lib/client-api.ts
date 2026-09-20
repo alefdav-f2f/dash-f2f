@@ -6,11 +6,14 @@ import type { ApiErrorKind, ApiErrorPayload, PluginsResponse } from './types';
 export class ApiError extends Error {
   kind: ApiErrorKind;
   detail?: string;
-  constructor(kind: ApiErrorKind, message: string, detail?: string) {
+  /** Só relevante para kind 'unauthorized'. Ver ApiErrorPayload em ./types. */
+  credentialLastVerifiedAt?: string | null;
+  constructor(kind: ApiErrorKind, message: string, detail?: string, credentialLastVerifiedAt?: string | null) {
     super(message);
     this.name = 'ApiError';
     this.kind = kind;
     this.detail = detail;
+    this.credentialLastVerifiedAt = credentialLastVerifiedAt;
   }
 }
 
@@ -35,6 +38,7 @@ export async function fetchPlugins(site: string, signal?: AbortSignal): Promise<
       payload?.kind ?? 'http',
       payload?.message ?? `Erro ${res.status} ao consultar o site.`,
       payload?.detail,
+      payload?.credentialLastVerifiedAt,
     );
   }
 

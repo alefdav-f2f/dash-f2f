@@ -13,15 +13,28 @@ import { findSite, recentScans, saveInventoryExtras, saveScan, scanPlugins } fro
 import { diffScans } from '@/lib/diff';
 import { InvalidSiteUrlError, normalizeSiteUrl } from '@/lib/site-url';
 import { collectInventory, WpError } from '@/lib/wp-rest';
-import { getCredential, markCredentialResult } from '@/lib/credentials';
+import { credentialStatus, getCredential, markCredentialResult } from '@/lib/credentials';
 import { SecretPayloadError } from '@/lib/crypto';
 import type { ApiErrorKind, ApiErrorPayload } from '@/lib/types';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-function fail(status: number, kind: ApiErrorKind, message: string, detail?: string) {
-  const body: ApiErrorPayload = { error: true, kind, message, ...(detail ? { detail } : {}) };
+function fail(
+  status: number,
+  kind: ApiErrorKind,
+  message: string,
+  detail?: string,
+  credentialLastVerifiedAt?: string | null,
+) {
+  const body: ApiErrorPayload = {
+    error: true,
+    kind,
+    message,
+    ...(detail ? { detail } : {}),
+    // undefined = campo omitido de propósito (sinal indisponível); ver types.ts.
+    ...(credentialLastVerifiedAt !== undefined ? { credentialLastVerifiedAt } : {}),
+  };
   return NextResponse.json(body, { status });
 }
 
@@ -81,7 +94,17 @@ export async function GET(request: NextRequest) {
     // O erro também vira histórico: saber quando o site parou de responder importa.
     await saveScan({ siteId: row.id, source: 'manual', errorKind: wpErr.kind, errorMessage: wpErr.message });
     await markCredentialResult(row.id, wpErr.message);
-    return fail(wpErr.status, wpErr.kind, wpErr.message, wpErr.detail);
+
+    // Só no 401 a UI precisa do histórico da credencial para ordenar hipóteses
+    // de causa (ver src/components/States.tsx). Consulta extra só neste
+    // caminho de erro — o caminho feliz não paga por ela.
+    let credentialLastVerifiedAt: string | null | undefined;
+    if (wpErr.kind === 'unauthorized') {
+      const status = await credentialStatus(user.id, row.id);
+      credentialLastVerifiedAt = status?.last_verified_at ?? null;
+    }
+
+    return fail(wpErr.status, wpErr.kind, wpErr.message, wpErr.detail, credentialLastVerifiedAt);
   }
 
   const { plugins, themes, users, settings, health, failures } = inventory;

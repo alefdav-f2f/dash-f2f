@@ -29,7 +29,7 @@ export function LoadingState({ site }: { site: string }) {
 }
 
 /** Mensagem por tipo de falha — o app nunca quebra, só explica. */
-function errorCopy(kind: ApiErrorKind, message: string) {
+function errorCopy(kind: ApiErrorKind, message: string, credentialLastVerifiedAt?: string | null) {
   switch (kind) {
     case 'not_found':
       return {
@@ -75,17 +75,65 @@ function errorCopy(kind: ApiErrorKind, message: string) {
           </>
         ),
       };
-    case 'unauthorized':
+    case 'unauthorized': {
+      const title = 'Credencial recusada · 401';
+
+      // Testado contra um WordPress real: sem credencial, com senha errada ou
+      // com usuário inexistente, o core devolve a MESMA resposta 401 — não dá
+      // para diferenciar essas causas daqui. Por isso este texto nunca afirma
+      // qual é a causa; só ordena hipóteses pelo único sinal que temos
+      // (last_verified_at) e diz o que checar. Ver plano da Fase 4, tarefa 5.
+
+      // Sinal indisponível (não é o caminho comum: só acontece se algo falhar
+      // ao consultar o histórico da credencial) — cai na redação neutra
+      // original em vez de adivinhar.
+      if (credentialLastVerifiedAt === undefined) {
+        return {
+          title,
+          body: (
+            <>
+              O WordPress rejeitou a Application Password. Ela pode ter sido revogada — ou o
+              servidor está descartando o cabeçalho <code>Authorization</code>, o que é comum
+              em Apache/CGI e se resolve com uma regra no <code>.htaccess</code>.
+            </>
+          ),
+        };
+      }
+
+      // Nunca verificou: é o primeiro cadastro. A causa mais comum neste caso
+      // é o servidor descartando o cabeçalho Authorization antes de chegar ao
+      // PHP — típico de Apache/CGI — então essa é a primeira coisa a checar.
+      if (credentialLastVerifiedAt === null) {
+        return {
+          title,
+          body: (
+            <>
+              Esta credencial nunca chegou a funcionar. A causa mais comum nesse caso é o
+              servidor descartando o cabeçalho <code>Authorization</code> antes de chegar ao
+              WordPress — típico de hospedagem Apache/CGI. Verifique isso primeiro: normalmente
+              se resolve com uma regra no <code>.htaccess</code> (ex.:{' '}
+              <code>SetEnvIf Authorization</code>). Só depois vale reconferir usuário e senha.
+            </>
+          ),
+        };
+      }
+
+      // Já verificou antes e parou de funcionar: revogação é a hipótese mais
+      // provável, mas uma mudança na configuração do servidor também explica.
+      const lastVerified = new Date(credentialLastVerifiedAt).toLocaleString('pt-BR');
       return {
-        title: 'Credencial recusada · 401',
+        title,
         body: (
           <>
-            O WordPress rejeitou a Application Password. Ela pode ter sido revogada — ou o
-            servidor está descartando o cabeçalho <code>Authorization</code>, o que é comum
-            em Apache/CGI e se resolve com uma regra no <code>.htaccess</code>.
+            Esta credencial funcionava — a última verificação bem-sucedida foi em{' '}
+            {lastVerified}. A hipótese mais provável é a Application Password ter sido
+            revogada no WordPress; uma mudança na configuração do servidor (por exemplo, ele
+            passou a descartar o cabeçalho <code>Authorization</code>) também pode explicar.
+            Não dá para saber qual daqui — verifique as duas.
           </>
         ),
       };
+    }
     case 'forbidden':
       return {
         title: 'Sem permissão · 403',
@@ -101,8 +149,17 @@ function errorCopy(kind: ApiErrorKind, message: string) {
   }
 }
 
-export function ErrorState({ kind, message }: { kind: ApiErrorKind; message: string }) {
-  const copy = errorCopy(kind, message);
+export function ErrorState({
+  kind,
+  message,
+  credentialLastVerifiedAt,
+}: {
+  kind: ApiErrorKind;
+  message: string;
+  /** Só relevante para kind 'unauthorized'. Ver ApiErrorPayload em @/lib/types. */
+  credentialLastVerifiedAt?: string | null;
+}) {
+  const copy = errorCopy(kind, message, credentialLastVerifiedAt);
   return (
     <div className={`err${'muted' in copy && copy.muted ? ' mut' : ''}`} role="alert">
       <b>{copy.title}</b>

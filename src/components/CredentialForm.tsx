@@ -7,7 +7,7 @@
 
 import { useState, useTransition } from 'react';
 import { deleteCredentialAction, saveCredentialAction } from '@/app/actions';
-import type { CredentialInfo } from '@/lib/types';
+import { UNAUTHORIZED_CREDENTIAL_MESSAGE, type CredentialInfo } from '@/lib/types';
 
 type Props = {
   siteId: string;
@@ -15,11 +15,30 @@ type Props = {
   current: CredentialInfo | null;
 };
 
+/**
+ * Uma linha só, e só quando o último erro foi especificamente o 401 (não
+ * qualquer falha) — checar via a mensagem fixa que src/lib/wp-rest.ts emite,
+ * já que `CredentialInfo` guarda texto (`last_error`), não o `ApiErrorKind`
+ * que o gerou. Mesma lógica de ranqueamento de src/components/States.tsx,
+ * condensada: nunca afirma a causa, só ordena hipóteses.
+ */
+function unauthorizedHint(current: CredentialInfo): string | null {
+  if (current.last_error !== UNAUTHORIZED_CREDENTIAL_MESSAGE) return null;
+
+  if (current.last_verified_at === null) {
+    return 'Nunca funcionou: verifique primeiro se o servidor não está descartando o cabeçalho Authorization (comum em Apache/CGI) antes de reconferir usuário e senha.';
+  }
+
+  const lastVerified = new Date(current.last_verified_at).toLocaleString('pt-BR');
+  return `Funcionava até ${lastVerified}: a senha pode ter sido revogada no WordPress, ou a configuração do servidor mudou.`;
+}
+
 export function CredentialForm({ siteId, siteUrl, current }: Props) {
   const [wpUser, setWpUser] = useState(current?.wp_user ?? '');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const hint = current ? unauthorizedHint(current) : null;
 
   function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -67,6 +86,8 @@ export function CredentialForm({ siteId, siteUrl, current }: Props) {
       {current?.last_error && (
         <p className="cred-error">Última tentativa falhou: {current.last_error}</p>
       )}
+
+      {hint && <p className="cred-help">{hint}</p>}
 
       {current?.last_verified_at && !current.last_error && (
         <p className="cred-ok">
