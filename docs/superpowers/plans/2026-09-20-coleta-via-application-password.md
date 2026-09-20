@@ -1007,7 +1007,7 @@ Create `src/lib/wporg.test.ts`:
 
 ```ts
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { parseWporgResponse } from './wporg';
+import { fetchFromWporg, parseWporgResponse } from './wporg';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -1026,6 +1026,35 @@ describe('parseWporgResponse', () => {
 
   it('resposta sem version vira null', () => {
     expect(parseWporgResponse({ name: 'Sem versão' })).toBeNull();
+  });
+});
+
+describe('fetchFromWporg', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const ok = (body: unknown, status = 200) =>
+    vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } }),
+    );
+
+  it('404 é fato: o plugin não está no repositório', async () => {
+    vi.stubGlobal('fetch', ok({ error: 'Plugin not found.' }, 404));
+    expect(await fetchFromWporg('acf-pro')).toEqual({ known: true, version: null });
+  });
+
+  it('200 com versão é fato', async () => {
+    vi.stubGlobal('fetch', ok({ version: '3.23.4' }));
+    expect(await fetchFromWporg('elementor')).toEqual({ known: true, version: '3.23.4' });
+  });
+
+  it('500 NÃO é fato — não sabemos, e isso não pode virar cache', async () => {
+    vi.stubGlobal('fetch', ok({}, 500));
+    expect(await fetchFromWporg('elementor')).toEqual({ known: false });
+  });
+
+  it('falha de rede NÃO é fato', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNRESET')));
+    expect(await fetchFromWporg('elementor')).toEqual({ known: false });
   });
 });
 ```
@@ -1057,6 +1086,8 @@ const sql = neon(process.env.DATABASE_URL!);
 const ENDPOINT = 'https://api.wordpress.org/plugins/info/1.0/';
 const TTL_HOURS = 12;
 const TIMEOUT_MS = 8_000;
+/** Teto de tempo gasto consultando o wp.org por varredura. Ver o laço abaixo. */
+const BUDGET_MS = 60_000;
 
 /** Exportada para teste: a forma da resposta do wp.org é instável. */
 export function parseWporgResponse(data: unknown): string | null {
@@ -1066,7 +1097,19 @@ export function parseWporgResponse(data: unknown): string | null {
   return typeof body.version === 'string' ? body.version : null;
 }
 
-async function fetchFromWporg(slug: string): Promise<string | null> {
+/**
+ * Duas ausências que NÃO podem ser confundidas:
+ *  - `{ known: true, version: null }` — o wp.org respondeu e disse que o plugin
+ *    não existe no repositório. É fato, e pode ser cacheado.
+ *  - `{ known: false }` — a consulta falhou (rede, timeout, 500). Não sabemos
+ *    nada, e gravar isso como null no cache faria um plugin comum aparecer
+ *    como "atualização desconhecida" por 12 horas por causa de um soluço de
+ *    rede. Não cacheia.
+ */
+type Lookup = { known: true; version: string | null } | { known: false };
+
+/** Exportada para teste: a distinção known/unknown é o que protege o cache. */
+export async function fetchFromWporg(slug: string): Promise<Lookup> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
@@ -1076,12 +1119,13 @@ async function fetchFromWporg(slug: string): Promise<string | null> {
       cache: 'no-store',
       signal: controller.signal,
     });
-    if (!response.ok) return null;
-    return parseWporgResponse(await response.json());
+    // 404 é resposta legítima: o plugin não está no repositório.
+    if (response.status === 404) return { known: true, version: null };
+    if (!response.ok) return { known: false };
+    return { known: true, version: parseWporgResponse(await response.json()) };
   } catch {
-    // Indisponibilidade do wp.org não pode derrubar a varredura: sem dado,
-    // o plugin fica como 'unknown'.
-    return null;
+    // Rede ou timeout: indisponibilidade nossa, não ausência do plugin.
+    return { known: false };
   } finally {
     clearTimeout(timer);
   }
@@ -1109,15 +1153,32 @@ export async function latestVersions(slugs: string[]): Promise<Map<string, strin
   if (missing.length === 0) return result;
 
   // Sequencial de propósito: o wp.org não gosta de rajada, e isso roda no cron.
+  // O orçamento existe porque um site com 60 plugins, todos frios e todos
+  // lentos, passaria do maxDuration de 300s da rota de cron. Estourado o tempo,
+  // o resto fica sem dado NESTA rodada e tenta de novo na próxima — que é
+  // diferente de gravar "não existe no repositório".
+  const deadline = Date.now() + BUDGET_MS;
+
   for (const slug of missing) {
-    const version = await fetchFromWporg(slug);
-    result.set(slug, version);
-    await sql`
-      INSERT INTO wporg_versions (slug, latest_version, checked_at)
-      VALUES (${slug}, ${version}, now())
-      ON CONFLICT (slug) DO UPDATE
-         SET latest_version = EXCLUDED.latest_version, checked_at = now()
-    `;
+    if (Date.now() > deadline) {
+      result.set(slug, null);
+      continue;
+    }
+
+    const lookup = await fetchFromWporg(slug);
+    result.set(slug, lookup.known ? lookup.version : null);
+
+    // Só grava o que o wp.org afirmou. Falha de consulta não vira cache:
+    // caso contrário um timeout de um segundo faria o plugin aparecer como
+    // "atualização desconhecida" pelas próximas 12 horas.
+    if (lookup.known) {
+      await sql`
+        INSERT INTO wporg_versions (slug, latest_version, checked_at)
+        VALUES (${slug}, ${lookup.version}, now())
+        ON CONFLICT (slug) DO UPDATE
+           SET latest_version = EXCLUDED.latest_version, checked_at = now()
+      `;
+    }
   }
 
   return result;
