@@ -2550,6 +2550,36 @@ Expected: nenhuma saída. Se houver, migre a chamada antes de apagar.
 git rm src/lib/wp.ts
 ```
 
+- [ ] **Step 2b: Corrigir os comentários de contrato que apontam para o arquivo removido**
+
+`src/app/api/plugins/route.ts:4` ainda diz:
+
+```
+// CONTRATO: só GET sai daqui para o WordPress (ver src/lib/wp.ts). A escrita
+```
+
+Comentário de segurança apontando para arquivo que não existe mais é pior do
+que nenhum. Troque a referência por `src/lib/wp-rest.ts` e diga o que mudou de
+fato — a garantia deixou de vir da ausência de credencial e passou a vir da
+disciplina do módulo:
+
+```ts
+// CONTRATO: só GET sai daqui para o WordPress (ver src/lib/wp-rest.ts, que é o
+// único ponto de saída). A credencial usada TEM poder de escrita no WordPress —
+// Application Password não tem escopo no core — então a garantia de somente
+// leitura é imposta por aquele módulo, não pela credencial. A escrita acontece
+// apenas no nosso Postgres.
+```
+
+Varra o resto da árvore por outras referências penduradas antes de seguir:
+
+```bash
+grep -rn "lib/wp\b\|lib/wp\.ts\|site-status/v1" src/ docs/ README.md
+```
+
+Cada ocorrência ou vira `wp-rest`, ou é texto histórico que deve dizer
+explicitamente que descreve o desenho antigo.
+
 - [ ] **Step 3: Reescrever a seção de segurança do README**
 
 Modify `README.md`. A seção "Garantia de somente leitura" deixou de ser verdadeira como estava escrita. Substitua por:
