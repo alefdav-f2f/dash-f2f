@@ -11,6 +11,9 @@ import { neon } from '@neondatabase/serverless';
 
 const ROLE = 'dash_f2f_reader';
 const READ_TABLES = ['app_users', 'sites', 'scans', 'scan_plugins'];
+// Tabelas que o MCP NUNCA pode ler. O ALTER DEFAULT PRIVILEGES abaixo concede
+// SELECT em toda tabela nova; estas precisam de revogação explícita, sempre.
+const FORBIDDEN_TABLES = ['site_credentials', 'api_tokens'];
 const ENV_PATH = join(process.cwd(), '.env.local');
 
 const adminUrl = process.env.DATABASE_URL;
@@ -51,6 +54,17 @@ for (const table of READ_TABLES) {
   await sql.query(`REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON TABLE ${table} FROM ${ROLE}`);
 }
 console.log(`grants aplicados em: ${READ_TABLES.join(', ')}`);
+
+// Revogação total nas tabelas de segredo — inclusive o SELECT herdado do
+// ALTER DEFAULT PRIVILEGES. Tolerante a tabela ainda não criada.
+for (const table of FORBIDDEN_TABLES) {
+  try {
+    await sql.query(`REVOKE ALL ON TABLE ${table} FROM ${ROLE}`);
+    console.log(`· ${table}: acesso revogado do ${ROLE}`);
+  } catch (err) {
+    if (!/does not exist/i.test(err.message)) throw err;
+  }
+}
 
 if (password) {
   // Monta a URL do reader trocando as credenciais da URL de admin.
