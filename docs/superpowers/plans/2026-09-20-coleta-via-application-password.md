@@ -700,6 +700,22 @@ export type RawPlugin = {
 };
 ```
 
+Acrescentar `update_source` a `Plugin` quebra o único lugar que ainda constrói um
+literal desse tipo: `normalizePlugin` em `src/lib/wp.ts:87`, o coletor antigo.
+Ele só sai de cena na Task 18, então mantenha a árvore compilando com uma ponte
+de uma linha — modifique `src/lib/wp.ts`, no `return` de `normalizePlugin`:
+
+```ts
+    new_version: p.new_version != null ? String(p.new_version) : '',
+    // Transitório: o coletor antigo lê has_update direto do endpoint
+    // customizado, então a origem é o próprio site, não o wordpress.org.
+    // Este arquivo inteiro sai na Task 18.
+    update_source: 'wporg' as const,
+```
+
+Todos os outros usos de `Plugin` são casts (`as Plugin[]`) ou tipos de parâmetro
+— nenhum quebra.
+
 E acrescente o campo em `Plugin`:
 
 ```ts
