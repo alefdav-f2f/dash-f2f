@@ -6,6 +6,7 @@ import {
   fetchSettings,
   fetchThemes,
   fetchUsers,
+  wporgSlug,
 } from './wp-rest';
 
 // collectInventory -> collectPlugins -> latestVersions faria uma consulta real
@@ -94,6 +95,51 @@ describe('fetchRawPlugins', () => {
     await expect(fetchRawPlugins('https://exemplo.com', CRED)).rejects.toSatisfy(
       (e: Error) => !e.message.includes(CRED.password),
     );
+  });
+
+  it('slug vem do plugin_uri quando ele declara o do repositório', async () => {
+    vi.stubGlobal('fetch', mockFetch(200, [
+      { plugin: 'hello', status: 'active', name: 'Hello Dolly', version: '1.7.2',
+        plugin_uri: 'http://wordpress.org/plugins/hello-dolly/', textdomain: 'hello-dolly' },
+      { plugin: 'acme-pro-toolkit/acme-pro-toolkit', status: 'active', name: 'Acme Pro Toolkit',
+        version: '2.3.1', plugin_uri: 'https://example.com/acme-pro-toolkit' },
+    ]));
+
+    const plugins = await fetchRawPlugins('https://exemplo.com', CRED);
+    expect(plugins.map((p) => p.slug)).toEqual(['hello-dolly', 'acme-pro-toolkit']);
+  });
+});
+
+describe('wporgSlug', () => {
+  it('usa o nome do diretório quando plugin_uri está ausente', () => {
+    expect(wporgSlug('elementor/elementor', undefined)).toBe('elementor');
+  });
+
+  it('usa o nome do diretório quando plugin_uri é vazio', () => {
+    expect(wporgSlug('elementor/elementor', '')).toBe('elementor');
+  });
+
+  it('usa o nome do diretório quando plugin_uri não é do wordpress.org', () => {
+    expect(wporgSlug('elementor/elementor', 'https://elementor.com/')).toBe('elementor');
+  });
+
+  it('o wordpress.org na plugin_uri vence o nome do diretório', () => {
+    expect(wporgSlug('hello', 'http://wordpress.org/plugins/hello-dolly/')).toBe('hello-dolly');
+  });
+
+  it('funciona com https e sem barra final', () => {
+    expect(wporgSlug('hello', 'https://wordpress.org/plugins/hello-dolly')).toBe('hello-dolly');
+  });
+
+  it('ignora query string e fragmento depois do slug', () => {
+    expect(wporgSlug('hello', 'https://wordpress.org/plugins/hello-dolly?foo=1')).toBe('hello-dolly');
+    expect(wporgSlug('hello', 'https://wordpress.org/plugins/hello-dolly#reviews')).toBe('hello-dolly');
+  });
+
+  it('plugin_uri não-string cai para o nome do diretório sem lançar', () => {
+    expect(wporgSlug('hello', null)).toBe('hello');
+    expect(wporgSlug('hello', undefined)).toBe('hello');
+    expect(wporgSlug('hello', 42)).toBe('hello');
   });
 });
 
