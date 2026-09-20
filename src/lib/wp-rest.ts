@@ -19,6 +19,9 @@ const TIMEOUT_MS = 12_000;
 
 export type Credential = { user: string; password: string };
 
+/** Opções de `wpGet`. Minimalista de propósito — só o que o Site Health precisou. */
+export type WpGetOptions = { timeoutMs?: number };
+
 export class WpError extends Error {
   kind: ApiErrorKind;
   status: number;
@@ -40,13 +43,14 @@ function authHeader({ user, password }: Credential): string {
  * GET autenticado num caminho da REST API. Devolve o JSON já parseado.
  * Nenhuma mensagem de erro daqui inclui a credencial.
  */
-export async function wpGet(site: string, path: string, credential: Credential): Promise<unknown> {
+export async function wpGet(site: string, path: string, credential: Credential, options?: WpGetOptions): Promise<unknown> {
   if (process.env.ALLOW_PRIVATE_HOSTS !== '1' && isPrivateHost(new URL(site).hostname)) {
     throw new WpError('invalid_url', 400, 'Endereços locais ou de rede interna não são permitidos.');
   }
 
+  const timeoutMs = options?.timeoutMs ?? TIMEOUT_MS;
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   let upstream: Response;
   try {

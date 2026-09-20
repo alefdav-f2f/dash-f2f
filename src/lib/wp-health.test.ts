@@ -88,4 +88,89 @@ describe('fetchSiteHealth', () => {
     const checks = await fetchSiteHealth('https://exemplo.com', CRED);
     expect(checks[0].label).toMatch(/não foi possível|não verificad/i);
   });
+
+  it('roda as checagens uma de cada vez, nunca duas em voo ao mesmo tempo', async () => {
+    // Regressão-alvo: se alguém trocar o laço sequencial por Promise.all de
+    // novo, este teste falha — o pico de chamadas simultâneas passa de 1.
+    let inFlight = 0;
+    let peak = 0;
+    const fetchMock = vi.fn().mockImplementation(() => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          inFlight -= 1;
+          resolve(new Response(JSON.stringify({ ...GOOD, status: 'good' }), { status: 200 }));
+        }, 5);
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const checks = await fetchSiteHealth('https://exemplo.com', CRED);
+
+    expect(checks).toHaveLength(HEALTH_TESTS.length);
+    expect(fetchMock).toHaveBeenCalledTimes(HEALTH_TESTS.length);
+    expect(peak).toBe(1);
+  });
+
+  it('checagem que estoura o próprio timeout vira unknown sem afetar as outras', async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (String(url).endsWith('https-status')) {
+        // Nunca resolve por si só: só reage ao abort, como um fetch real faria
+        // quando o AbortController de wpGet dispara ao estourar o timeout.
+        return new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => {
+            const err = new Error('The operation was aborted');
+            err.name = 'AbortError';
+            reject(err);
+          });
+        });
+      }
+      return Promise.resolve(new Response(JSON.stringify({ ...GOOD, status: 'good' }), { status: 200 }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    // timeoutMs baixo só para o teste não esperar os 20s reais de produção.
+    const checks = await fetchSiteHealth('https://exemplo.com', CRED, { timeoutMs: 20 });
+    const byTest = Object.fromEntries(checks.map((c) => [c.test, c]));
+
+    expect(checks).toHaveLength(HEALTH_TESTS.length);
+    expect(byTest['https-status'].status).toBe('unknown');
+    expect(checks.filter((c) => c.status === 'good')).toHaveLength(HEALTH_TESTS.length - 1);
+  });
+
+  it('quando o orçamento acaba, o restante vira unknown sem chamar fetch, e a lista continua com seis', async () => {
+    // now() controlado manualmente: evita brigar com o AbortController de
+    // wpGet (que usa setTimeout real) e mantém o teste determinístico e
+    // rápido, sem esperar os 45s reais do orçamento de produção.
+    // mockImplementation (não mockResolvedValue): cada chamada precisa de um
+    // Response novo, porque o corpo só pode ser lido uma vez por .json().
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(new Response(JSON.stringify({ ...GOOD, status: 'good' }), { status: 200 })),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    // 1ª chamada calcula o deadline (base 0, orçamento 100 -> deadline 100).
+    // As 6 chamadas seguintes são a checagem de orçamento no topo do laço,
+    // uma por teste: as duas primeiras (0, 50) estão dentro do orçamento: as
+    // quatro últimas (150 cada) já o estouraram.
+    const now = vi
+      .fn()
+      .mockReturnValueOnce(0)
+      .mockReturnValueOnce(0)
+      .mockReturnValueOnce(50)
+      .mockReturnValueOnce(150)
+      .mockReturnValueOnce(150)
+      .mockReturnValueOnce(150)
+      .mockReturnValueOnce(150);
+
+    const checks = await fetchSiteHealth('https://exemplo.com', CRED, { budgetMs: 100, now });
+
+    expect(checks).toHaveLength(HEALTH_TESTS.length);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const skipped = checks.slice(2);
+    expect(skipped.every((c) => c.status === 'unknown')).toBe(true);
+    expect(skipped.every((c) => /orçamento/i.test(c.label))).toBe(true);
+    expect(checks.filter((c) => c.status === 'good')).toHaveLength(2);
+  });
 });
