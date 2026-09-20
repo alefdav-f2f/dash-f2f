@@ -691,7 +691,10 @@ export type UpdateSource = 'wporg' | 'unknown';
 export type RawPlugin = {
   file: string;
   name: string;
-  version: string;
+  /** `null` quando o site não informou versão. NÃO use '—' aqui: '—' é
+   *  placeholder de exibição, e tratá-lo como dado faz `parse()` lê-lo como
+   *  versão 0, o que transformaria "não sei" em "desatualizado". */
+  version: string | null;
   is_active: boolean;
   slug: string;
 };
@@ -754,6 +757,16 @@ describe('fetchRawPlugins', () => {
       { file: 'elementor/elementor', name: 'Elementor', version: '3.21.5', is_active: true, slug: 'elementor' },
       { file: 'hello', name: 'Hello Dolly', version: '1.7.2', is_active: false, slug: 'hello' },
     ]);
+  });
+
+  it('versão ausente ou vazia vira null, nunca o placeholder de exibição', async () => {
+    vi.stubGlobal('fetch', mockFetch(200, [
+      { plugin: 'sem-versao/sem-versao', status: 'active', name: 'Sem Versão' },
+      { plugin: 'vazia/vazia', status: 'active', name: 'Vazia', version: '' },
+    ]));
+
+    const plugins = await fetchRawPlugins('https://exemplo.com', CRED);
+    expect(plugins.map((p) => p.version)).toEqual([null, null]);
   });
 
   it('401 vira unauthorized', async () => {
@@ -917,7 +930,10 @@ function normalizeRawPlugin(raw: unknown): RawPlugin {
   return {
     file,
     name: typeof p.name === 'string' && p.name ? p.name : file || 'Plugin sem nome',
-    version: p.version != null ? String(p.version) : '—',
+    // Versão ausente vira null, nunca '—'. O placeholder só aparece na hora de
+    // renderizar (ver mergePluginVersions); como dado, ele seria lido como
+    // versão 0 e faria um plugin de versão desconhecida contar como pendente.
+    version: p.version != null && String(p.version).trim() ? String(p.version) : null,
     is_active: p.status === 'active',
     // "elementor/elementor" -> "elementor"; plugin de arquivo único -> ele mesmo.
     slug: file.split('/')[0],
@@ -1125,6 +1141,7 @@ const raw: RawPlugin[] = [
   { file: 'elementor/elementor', name: 'Elementor', version: '3.21.5', is_active: true, slug: 'elementor' },
   { file: 'akismet/akismet', name: 'Akismet', version: '5.3.1', is_active: false, slug: 'akismet' },
   { file: 'acf-pro/acf-pro', name: 'ACF Pro', version: '6.2.0', is_active: true, slug: 'acf-pro' },
+  { file: 'sem-versao/sem-versao', name: 'Sem Versão', version: null, is_active: true, slug: 'sem-versao' },
 ];
 
 describe('mergePluginVersions', () => {
@@ -1161,6 +1178,18 @@ describe('mergePluginVersions', () => {
     expect(merged.every((p) => p.update_source === 'unknown')).toBe(true);
   });
 
+  it('versão instalada desconhecida NUNCA vira desatualizado', () => {
+    // Regressão: '—' como dado fazia parse() ler versão 0, e 0 < 6 marcava
+    // pendência em plugin cuja versão o site nem informou.
+    const merged = mergePluginVersions(raw, new Map([['sem-versao', '6.0.0']]));
+    expect(merged.find((p) => p.name === 'Sem Versão')).toMatchObject({
+      version: '—',
+      has_update: false,
+      new_version: '',
+      update_source: 'unknown',
+    });
+  });
+
   it('preserva file, nome, versão e estado ativo', () => {
     const [elementor] = mergePluginVersions(raw, new Map([['elementor', '3.23.4']]));
     expect(elementor.file).toBe('elementor/elementor');
@@ -1195,18 +1224,25 @@ export function mergePluginVersions(
   latest: Map<string, string | null>,
 ): Plugin[] {
   return raw.map((plugin) => {
+    const installed = plugin.version;
     const published = latest.get(plugin.slug) ?? null;
-    const outdated = isOutdated(plugin.version, published);
+
+    // Duas incertezas diferentes, mesmo veredito: sem versão instalada (o site
+    // não informou) ou sem versão publicada (plugin fora do repositório oficial).
+    // Em nenhum dos dois casos dá para afirmar nada — 'unknown' é honesto,
+    // 'em dia' seria mentira, e 'desatualizado' seria pior ainda.
+    const comparable = installed !== null && published !== null;
+    const outdated = comparable && isOutdated(installed, published);
+
     return {
       file: plugin.file,
       name: plugin.name,
-      version: plugin.version,
+      // O placeholder de exibição entra só aqui, na fronteira de renderização.
+      version: installed ?? '—',
       is_active: plugin.is_active,
       has_update: outdated,
       new_version: outdated && published ? published : '',
-      // Sem versão publicada não afirmamos nada: 'unknown' é honesto, 'em dia'
-      // seria mentira — e é justamente o caso do plugin premium.
-      update_source: published ? 'wporg' : 'unknown',
+      update_source: comparable ? 'wporg' : 'unknown',
     };
   });
 }
