@@ -1990,11 +1990,22 @@ export type WpSettings = {
   language: string;
 };
 
+/** Recursos opcionais do inventário, além de plugins. */
+export type InventoryResource = 'themes' | 'users' | 'settings';
+
 export type SiteInventory = {
   plugins: Plugin[];
   themes: Theme[];
   users: WpUser[];
   settings: WpSettings | null;
+  /**
+   * Recursos que não puderam ser lidos, com o motivo. Vazio = tudo leu.
+   *
+   * Existe para que a UI distinga "este site não tem usuários" de "não
+   * conseguimos ler os usuários" — sem isso, um 403 em /wp/v2/users (falta a
+   * capability list_users) vira uma aba vazia que parece um fato.
+   */
+  failures: Partial<Record<InventoryResource, string>>;
 };
 ```
 
@@ -2122,14 +2133,25 @@ export async function fetchSettings(site: string, credential: Credential): Promi
  */
 export async function collectInventory(site: string, credential: Credential): Promise<SiteInventory> {
   const plugins = await collectPlugins(site, credential);
+  const failures: Partial<Record<InventoryResource, string>> = {};
+
+  /** Best-effort com memória: guarda o motivo em vez de engolir a falha. */
+  async function attempt<T>(resource: InventoryResource, run: () => Promise<T>, fallback: T): Promise<T> {
+    try {
+      return await run();
+    } catch (err) {
+      failures[resource] = err instanceof Error ? err.message : 'Falha desconhecida.';
+      return fallback;
+    }
+  }
 
   const [themes, users, settings] = await Promise.all([
-    fetchThemes(site, credential).catch(() => [] as Theme[]),
-    fetchUsers(site, credential).catch(() => [] as WpUser[]),
-    fetchSettings(site, credential).catch(() => null),
+    attempt('themes', () => fetchThemes(site, credential), [] as Theme[]),
+    attempt('users', () => fetchUsers(site, credential), [] as WpUser[]),
+    attempt('settings', () => fetchSettings(site, credential), null as WpSettings | null),
   ]);
 
-  return { plugins, themes, users, settings };
+  return { plugins, themes, users, settings, failures };
 }
 ```
 
