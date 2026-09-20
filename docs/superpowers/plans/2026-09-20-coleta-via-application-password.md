@@ -457,13 +457,12 @@ CREATE TABLE IF NOT EXISTS site_credentials (
 -- O MCP é exposto publicamente em /api/mcp: ele não pode, em hipótese alguma,
 -- ler esta tabela. A revogação abaixo é a segunda barreira (a primeira é o
 -- REVOKE explícito no próprio script).
-DO $$
-BEGIN
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'dash_f2f_reader') THEN
-    REVOKE ALL ON TABLE site_credentials FROM dash_f2f_reader;
-  END IF;
-END
-$$;
+-- ATENÇÃO ao formato: scripts/migrate.mjs quebra o arquivo em statements com
+-- `.split(/;\s*$/m)` — semicolon em fim de linha. Um bloco DO $$ ... $$ escrito
+-- em várias linhas seria rasgado ao meio, porque os `;` internos caem em fim de
+-- linha. Mantido em UMA linha de propósito: assim só o `$$;` final casa com o
+-- separador. Não reformate isso para "ficar legível".
+DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'dash_f2f_reader') THEN REVOKE ALL ON TABLE site_credentials FROM dash_f2f_reader; END IF; END $$;
 ```
 
 - [ ] **Step 2: Aplicar**
