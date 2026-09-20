@@ -12,7 +12,7 @@ import { neon } from '@neondatabase/serverless';
 const ROLE = 'dash_f2f_reader';
 // Lista de permissão: é assim, e só assim, que uma tabela nova vira legível
 // pelo MCP. Ver o REVOKE ALL + ALTER DEFAULT PRIVILEGES abaixo.
-const READ_TABLES = ['app_users', 'sites', 'scans', 'scan_plugins'];
+const READ_TABLES = ['app_users', 'sites', 'scans', 'scan_plugins', 'scan_themes', 'scan_users', 'scan_settings'];
 const ENV_PATH = join(process.cwd(), '.env.local');
 
 const adminUrl = process.env.DATABASE_URL;
