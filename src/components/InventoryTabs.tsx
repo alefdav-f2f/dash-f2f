@@ -54,6 +54,14 @@ function healthAttentionCount(health: HealthCheck[]): number {
   return health.filter((h) => h.status !== 'good').length;
 }
 
+/** Quantos temas merecem os olhos de alguém: atualização pendente, ou
+ *  update_source 'unknown' — mesma lógica de healthAttentionCount, "não
+ *  sabemos" também não é "está tudo bem". Nenhum tema em nenhum dos dois
+ *  casos → o chip fica sem número, como as outras abas calmas. */
+function themeAttentionCount(themes: Theme[]): number {
+  return themes.filter((t) => t.has_update || t.update_source === 'unknown').length;
+}
+
 export function InventoryTabs({ plugins, themes, users, settings, health, failures, filter, onFilter, changes }: Props) {
   const [tab, setTab] = useState<TabKey>('plugins');
 
@@ -67,8 +75,11 @@ export function InventoryTabs({ plugins, themes, users, settings, health, failur
     switch (key) {
       case 'plugins':
         return `${TAB_LABEL.plugins} · ${plugins.length}`;
-      case 'themes':
-        return failures.themes ? `${TAB_LABEL.themes} · falhou` : `${TAB_LABEL.themes} · ${themes.length}`;
+      case 'themes': {
+        if (failures.themes) return `${TAB_LABEL.themes} · falhou`;
+        const attention = themeAttentionCount(themes);
+        return attention > 0 ? `${TAB_LABEL.themes} · ${attention}` : TAB_LABEL.themes;
+      }
       case 'users':
         return failures.users ? `${TAB_LABEL.users} · falhou` : `${TAB_LABEL.users} · ${users.length}`;
       case 'settings':
@@ -138,10 +149,10 @@ function ThemesPanel({ themes, failure }: { themes: Theme[]; failure?: string })
       <table>
         <thead>
           <tr>
-            <th style={{ width: '42%' }}>Tema</th>
-            <th style={{ width: '30%' }}>Stylesheet</th>
-            <th style={{ width: '14%' }}>Versão</th>
-            <th style={{ width: '14%' }}>Status</th>
+            <th style={{ width: '36%' }}>Tema</th>
+            <th style={{ width: '24%' }}>Stylesheet</th>
+            <th style={{ width: '18%' }}>Versão</th>
+            <th style={{ width: '22%' }}>Status</th>
           </tr>
         </thead>
         <tbody>
@@ -150,18 +161,32 @@ function ThemesPanel({ themes, failure }: { themes: Theme[]; failure?: string })
               <td colSpan={4} className="table-empty">Nenhum tema instalado neste site.</td>
             </tr>
           ) : (
-            themes.map((t) => (
-              <tr key={t.stylesheet}>
-                <td data-col="tema"><div className="pname">{t.name}</div></td>
-                <td data-col="stylesheet"><span className="pfile mono">{t.stylesheet}</span></td>
-                <td data-col="versao"><span className="ver">{t.version}</span></td>
-                <td data-col="status">
-                  <span className={`badge ${t.is_active ? 'badge-active' : 'badge-inactive'}`}>
-                    {t.is_active ? 'Ativo' : 'Inativo'}
-                  </span>
-                </td>
-              </tr>
-            ))
+            themes.map((t) => {
+              const hasNew = t.has_update && Boolean(t.new_version);
+              return (
+                <tr key={t.stylesheet}>
+                  <td data-col="tema"><div className="pname">{t.name}</div></td>
+                  <td data-col="stylesheet"><span className="pfile mono">{t.stylesheet}</span></td>
+                  <td data-col="versao">
+                    <span className="ver">{t.version}</span>
+                    {hasNew && <span className="new">{t.new_version}</span>}
+                  </td>
+                  <td data-col="status">
+                    <span className={`badge ${t.is_active ? 'badge-active' : 'badge-inactive'}`}>
+                      {t.is_active ? 'Ativo' : 'Inativo'}
+                    </span>
+                    {t.update_source === 'unknown' && (
+                      <span
+                        className="badge badge-unknown"
+                        title="Tema fora do repositório oficial do WordPress. Não temos como saber se há versão mais nova."
+                      >
+                        atualização desconhecida
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })
           )}
         </tbody>
       </table>

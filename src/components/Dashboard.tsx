@@ -184,7 +184,7 @@ export function Dashboard({ sites, user }: Props) {
             </div>
           </div>
 
-          {view.status === 'ok' && <StatsRow plugins={view.plugins} />}
+          {view.status === 'ok' && <StatsRow plugins={view.plugins} themes={view.themes} />}
           {view.status === 'ok' && <HealthCritical health={view.health} />}
 
           {view.status === 'ok' && (
