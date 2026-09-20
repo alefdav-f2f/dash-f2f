@@ -17,7 +17,7 @@ import { ApiError, fetchPlugins } from '@/lib/client-api';
 import { computeStats, type FilterKey } from '@/lib/plugins';
 import { changesByFile, type Change } from '@/lib/diff';
 import { displayUrl } from '@/lib/site-url';
-import type { ApiErrorKind, InventoryResource, Plugin, Theme, WpSettings, WpUser } from '@/lib/types';
+import type { ApiErrorKind, HealthCheck, InventoryResource, Plugin, Theme, WpSettings, WpUser } from '@/lib/types';
 
 type View =
   | { status: 'idle' }
@@ -29,6 +29,7 @@ type View =
       themes: Theme[];
       users: WpUser[];
       settings: WpSettings | null;
+      health: HealthCheck[];
       /** Recursos que não puderam ser lidos nesta varredura, com o motivo. */
       failures: Partial<Record<InventoryResource, string>>;
       fetchedAt: number;
@@ -68,6 +69,7 @@ export function Dashboard({ sites, user }: Props) {
         themes: data.themes,
         users: data.users,
         settings: data.settings,
+        health: data.health,
         failures: data.failures,
         fetchedAt: Date.parse(data.fetchedAt),
         changes: data.changes,
@@ -171,6 +173,7 @@ export function Dashboard({ sites, user }: Props) {
           </div>
 
           {view.status === 'ok' && <StatsRow plugins={view.plugins} />}
+          {view.status === 'ok' && <HealthCritical health={view.health} />}
 
           {view.status === 'ok' && (
             <ChangeLog changes={view.changes} previousScanAt={view.previousScanAt} />
@@ -203,6 +206,7 @@ export function Dashboard({ sites, user }: Props) {
               themes={view.themes}
               users={view.users}
               settings={view.settings}
+              health={view.health}
               failures={view.failures}
               filter={filter}
               onFilter={setFilter}
@@ -212,6 +216,22 @@ export function Dashboard({ sites, user }: Props) {
         </main>
       </div>
     </>
+  );
+}
+
+/** Um site que responde a tudo mas não se atualiza sozinho está quebrado de
+ *  um jeito que a contagem de plugins não mostra. Uma linha só, perto das
+ *  métricas — não um banner — e só aparece quando há de fato uma checagem
+ *  'critical'; --red é o único lugar do app fora do próprio badge que usa
+ *  essa cor, e é por isso: crítico é a única coisa que precisa gritar. */
+function HealthCritical({ health }: { health: HealthCheck[] }) {
+  const critical = health.filter((h) => h.status === 'critical').length;
+  if (critical === 0) return null;
+
+  return (
+    <p className="health-critical">
+      {critical} {critical === 1 ? 'checagem de saúde crítica' : 'checagens de saúde críticas'} — veja a aba Saúde.
+    </p>
   );
 }
 

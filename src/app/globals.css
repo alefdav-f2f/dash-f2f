@@ -263,6 +263,20 @@ tbody tr:hover td { background: var(--surface-2); }
 .badge-inactive-outdated::before { background: var(--amber); }
 .badge-inactive { color: var(--mute); }
 
+/* badges de saúde do site: crítico é o único que veste --red no app inteiro;
+   recomendado é atenção sem alarme (--amber); bom fica na variante muda. */
+.badge-critical { color: var(--red); border-color: rgba(238, 0, 0, .35); }
+.badge-critical::before { background: var(--red); }
+.badge-recommended { color: var(--amber); border-color: rgba(245, 166, 35, .35); }
+.badge-recommended::before { background: var(--amber); }
+.badge-good { color: var(--mute); }
+
+/* Coluna de status da aba Saúde: `.badge-unknown` nasceu como anotação
+   secundária (margin-left) ao lado de outro badge em PluginTable; aqui ele é
+   o único badge da célula, então tira o deslocamento para alinhar com as
+   outras linhas. Escopado a esta coluna para não afetar PluginTable. */
+td[data-col="saude-status"] .badge-unknown { margin-left: 0; }
+
 /* linha alterada desde a última varredura */
 .row-changed td:first-child { box-shadow: inset 2px 0 0 var(--amber); }
 .chg {
@@ -420,6 +434,11 @@ tbody tr:hover td { background: var(--surface-2); }
 
 .badge-unknown { margin-left: 6px; opacity: .7; font-style: italic; }
 .coverage { font-size: 13px; color: var(--mute); margin: 8px 0 0; }
+
+/* linha de alerta acima das abas quando há checagem de saúde crítica — o
+   único outro lugar do app, além do badge em si, que usa --red. Deliberado:
+   não é um banner, é uma linha de texto que aponta para a aba Saúde. */
+.health-critical { font-size: 13px; line-height: 20px; color: var(--red); margin: 8px 0 0; }
 
 /* ── inventário: abas de temas, usuários e configurações ─────────────── */
 .inv { display: flex; flex-direction: column; gap: 14px; }

@@ -13,23 +13,25 @@ import { useState } from 'react';
 import { PluginTable } from '@/components/PluginTable';
 import type { FilterKey } from '@/lib/plugins';
 import type { Change } from '@/lib/diff';
-import type { InventoryResource, Plugin, Theme, WpSettings, WpUser } from '@/lib/types';
+import type { HealthCheck, HealthStatus, InventoryResource, Plugin, Theme, WpSettings, WpUser } from '@/lib/types';
 
-type TabKey = 'plugins' | 'themes' | 'users' | 'settings';
+type TabKey = 'plugins' | 'themes' | 'users' | 'settings' | 'health';
 
 const TAB_LABEL: Record<TabKey, string> = {
   plugins: 'Plugins',
   themes: 'Temas',
   users: 'Usuários',
   settings: 'Configurações',
+  health: 'Saúde',
 };
 
-/** Só os três recursos best-effort podem aparecer em `failures`; plugins é
+/** Só os quatro recursos best-effort podem aparecer em `failures`; plugins é
  *  obrigatório — se falhar, a varredura inteira falha antes de chegar aqui. */
 const TAB_RESOURCE: Partial<Record<TabKey, InventoryResource>> = {
   themes: 'themes',
   users: 'users',
   settings: 'settings',
+  health: 'health',
 };
 
 type Props = {
@@ -37,19 +39,30 @@ type Props = {
   themes: Theme[];
   users: WpUser[];
   settings: WpSettings | null;
+  health: HealthCheck[];
   failures: Partial<Record<InventoryResource, string>>;
   filter: FilterKey;
   onFilter: (key: FilterKey) => void;
   changes: Record<string, Change[]>;
 };
 
-export function InventoryTabs({ plugins, themes, users, settings, failures, filter, onFilter, changes }: Props) {
+/** Quantas checagens de saúde merecem os olhos de alguém: tudo que não é
+ *  'good'. 'recommended' é ação sugerida, 'critical' é alarme, 'unknown' é
+ *  "não sabemos" — nenhum dos três é "está tudo bem", então os três contam.
+ *  Só 'good' fica de fora. */
+function healthAttentionCount(health: HealthCheck[]): number {
+  return health.filter((h) => h.status !== 'good').length;
+}
+
+export function InventoryTabs({ plugins, themes, users, settings, health, failures, filter, onFilter, changes }: Props) {
   const [tab, setTab] = useState<TabKey>('plugins');
 
   /** Contagem no chip quando o recurso é uma lista; "falhou" no lugar da
    *  contagem quando não conseguimos lê-lo. Configurações não é uma lista —
    *  não tem uma contagem que faça sentido, então o chip fica sem número
-   *  enquanto está tudo bem, e só ganha o marcador quando falha. */
+   *  enquanto está tudo bem, e só ganha o marcador quando falha. Saúde
+   *  também fica sem número quando as seis checagens estão 'good' — um chip
+   *  calmo para um site saudável, não "· 6" toda vez. */
   function chipLabel(key: TabKey): string {
     switch (key) {
       case 'plugins':
@@ -60,6 +73,11 @@ export function InventoryTabs({ plugins, themes, users, settings, failures, filt
         return failures.users ? `${TAB_LABEL.users} · falhou` : `${TAB_LABEL.users} · ${users.length}`;
       case 'settings':
         return failures.settings ? `${TAB_LABEL.settings} · falhou` : TAB_LABEL.settings;
+      case 'health': {
+        if (failures.health) return `${TAB_LABEL.health} · falhou`;
+        const attention = healthAttentionCount(health);
+        return attention > 0 ? `${TAB_LABEL.health} · ${attention}` : TAB_LABEL.health;
+      }
     }
   }
 
@@ -92,6 +110,7 @@ export function InventoryTabs({ plugins, themes, users, settings, failures, filt
       {tab === 'themes' && <ThemesPanel themes={themes} failure={failures.themes} />}
       {tab === 'users' && <UsersPanel users={users} failure={failures.users} />}
       {tab === 'settings' && <SettingsPanel settings={settings} failure={failures.settings} />}
+      {tab === 'health' && <HealthPanel health={health} failure={failures.health} />}
     </div>
   );
 }
@@ -222,6 +241,111 @@ function SettingsPanel({ settings, failure }: { settings: WpSettings | null; fai
           </div>
         ))}
       </dl>
+    </div>
+  );
+}
+
+/** Ordem fixa de exibição — a mesma dos seis testes em HEALTH_TESTS
+ *  (src/lib/wp-health.ts). Não importamos daquele arquivo porque ele é
+ *  `server-only`; este é um componente de cliente. */
+const HEALTH_TEST_ORDER = [
+  'authorization-header',
+  'background-updates',
+  'dotorg-communication',
+  'https-status',
+  'loopback-requests',
+  'page-cache',
+];
+
+/** Nosso rótulo em português para o status — não é tradução do `label` do
+ *  WordPress (esse vem como veio, no idioma do site), é o vocabulário que o
+ *  resto do painel já usa para "Ativo"/"Inativo"/"falhou". */
+const HEALTH_STATUS_LABEL: Record<HealthStatus, string> = {
+  good: 'Boa',
+  recommended: 'Recomendado',
+  critical: 'Crítico',
+  unknown: 'Desconhecido',
+};
+
+/** Classe do badge por status. 'critical' é o único que veste --red — regra
+ *  de design do v3. 'recommended' é --amber (atenção, não alarme). 'good' é
+ *  a variante silenciosa. 'unknown' reaproveita `.badge-unknown` (mudo,
+ *  itálico), o mesmo tratamento da cobertura de atualização desconhecida em
+ *  PluginTable — para nunca ler como 'good'. */
+function healthBadgeClass(status: HealthStatus): string {
+  switch (status) {
+    case 'critical':
+      return 'badge-critical';
+    case 'recommended':
+      return 'badge-recommended';
+    case 'unknown':
+      return 'badge-unknown';
+    case 'good':
+      return 'badge-good';
+  }
+}
+
+/** Por que cada checagem importa, em português — não é tradução do `label`
+ *  do WordPress (que já vem no idioma do site), é o contexto que falta nele:
+ *  o que quebra na prática quando o teste não está 'good'. */
+const HEALTH_GLOSS: Record<string, string> = {
+  'authorization-header':
+    'Se falhar, o servidor está removendo o cabeçalho Authorization antes de chegar ao PHP — é o que faz a autenticação por Application Password dar 401 mesmo com a senha certa. Corrige-se com uma regra no .htaccess.',
+  'background-updates':
+    'Se falhar, o site não consegue se atualizar sozinho — nem para lançamentos de segurança.',
+  'dotorg-communication':
+    'Sem isso, o site não enxerga que existem atualizações disponíveis no WordPress.org.',
+  'https-status': 'Diz se o site está servindo por HTTPS.',
+  'loopback-requests':
+    'Se falhar, o WP-Cron está morto: nada agendado roda — posts agendados, atualização automática de plugins, plugins de backup.',
+  'page-cache': 'Diz se foi detectado um cache de página no site.',
+};
+
+function HealthPanel({ health, failure }: { health: HealthCheck[]; failure?: string }) {
+  if (failure) return <FailureNotice title="Não foi possível ler a saúde do site" reason={failure} />;
+
+  if (health.length === 0) {
+    return (
+      <div className="panel-box">
+        <p className="table-empty">Nenhuma checagem de saúde retornada por este site.</p>
+      </div>
+    );
+  }
+
+  const ordered = [...health].sort(
+    (a, b) => HEALTH_TEST_ORDER.indexOf(a.test) - HEALTH_TEST_ORDER.indexOf(b.test),
+  );
+
+  return (
+    <div className="tablewrap">
+      <div className="tbar">
+        <span className="count">{health.length} {health.length === 1 ? 'checagem' : 'checagens'}</span>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th style={{ width: '16%' }}>Status</th>
+            <th style={{ width: '42%' }}>Diagnóstico do WordPress</th>
+            <th style={{ width: '42%' }}>Por que importa</th>
+          </tr>
+        </thead>
+        <tbody>
+          {ordered.map((h) => (
+            <tr key={h.test}>
+              <td data-col="saude-status">
+                <span className={`badge ${healthBadgeClass(h.status)}`}>{HEALTH_STATUS_LABEL[h.status]}</span>
+              </td>
+              <td data-col="diagnostico">
+                <div className="pname">{h.label || '—'}</div>
+                {h.badge && <div className="pfile">{h.badge}</div>}
+              </td>
+              <td data-col="motivo">
+                <span className="eyebrow">{HEALTH_GLOSS[h.test] ?? '—'}</span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
