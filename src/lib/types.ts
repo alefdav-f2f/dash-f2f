@@ -81,3 +81,44 @@ export type CredentialInfo = {
   last_verified_at: string | null;
   last_error: string | null;
 };
+
+export type Theme = {
+  stylesheet: string;
+  name: string;
+  version: string;
+  is_active: boolean;
+};
+
+export type WpUser = {
+  wp_user_id: number;
+  slug: string;
+  name: string;
+  roles: string;
+};
+
+export type WpSettings = {
+  title: string;
+  description: string;
+  url: string;
+  admin_email: string;
+  timezone: string;
+  language: string;
+};
+
+/** Recursos opcionais do inventário, além de plugins. */
+export type InventoryResource = 'themes' | 'users' | 'settings';
+
+export type SiteInventory = {
+  plugins: Plugin[];
+  themes: Theme[];
+  users: WpUser[];
+  settings: WpSettings | null;
+  /**
+   * Recursos que não puderam ser lidos, com o motivo. Vazio = tudo leu.
+   *
+   * Existe para que a UI distinga "este site não tem usuários" de "não
+   * conseguimos ler os usuários" — sem isso, um 403 em /wp/v2/users (falta a
+   * capability list_users) vira uma aba vazia que parece um fato.
+   */
+  failures: Partial<Record<InventoryResource, string>>;
+};

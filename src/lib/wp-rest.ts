@@ -12,7 +12,7 @@ import 'server-only';
 import { isPrivateHost } from './site-url';
 import { latestVersions } from './wporg';
 import { mergePluginVersions } from './inventory';
-import type { ApiErrorKind, Plugin, RawPlugin } from './types';
+import type { ApiErrorKind, InventoryResource, Plugin, RawPlugin, SiteInventory, Theme, WpSettings, WpUser } from './types';
 
 const TIMEOUT_MS = 12_000;
 
@@ -133,4 +133,86 @@ export async function collectPlugins(site: string, credential: Credential): Prom
   const raw = await fetchRawPlugins(site, credential);
   const latest = await latestVersions(raw.map((p) => p.slug));
   return mergePluginVersions(raw, latest);
+}
+
+/** `name` e `description` podem vir como string ou como { raw, rendered }. */
+function flatten(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (value && typeof value === 'object') {
+    const obj = value as Record<string, unknown>;
+    if (typeof obj.raw === 'string') return obj.raw;
+    if (typeof obj.rendered === 'string') return obj.rendered;
+  }
+  return '';
+}
+
+export async function fetchThemes(site: string, credential: Credential): Promise<Theme[]> {
+  const data = await wpGet(site, '/wp-json/wp/v2/themes', credential);
+  if (!Array.isArray(data)) throw new WpError('bad_payload', 502, 'A resposta de /wp/v2/themes não é uma lista.');
+  return data.map((raw) => {
+    const t = (raw ?? {}) as Record<string, unknown>;
+    return {
+      stylesheet: typeof t.stylesheet === 'string' ? t.stylesheet : '',
+      name: flatten(t.name),
+      version: t.version != null ? String(t.version) : '',
+      is_active: t.status === 'active',
+    };
+  });
+}
+
+export async function fetchUsers(site: string, credential: Credential): Promise<WpUser[]> {
+  // context=edit é o que traz `roles`; exige capability list_users.
+  const data = await wpGet(site, '/wp-json/wp/v2/users?context=edit&per_page=100', credential);
+  if (!Array.isArray(data)) throw new WpError('bad_payload', 502, 'A resposta de /wp/v2/users não é uma lista.');
+  return data.map((raw) => {
+    const u = (raw ?? {}) as Record<string, unknown>;
+    return {
+      wp_user_id: Number(u.id ?? 0),
+      slug: typeof u.slug === 'string' ? u.slug : '',
+      name: flatten(u.name),
+      roles: Array.isArray(u.roles) ? u.roles.join(',') : '',
+    };
+  });
+}
+
+export async function fetchSettings(site: string, credential: Credential): Promise<WpSettings> {
+  const data = await wpGet(site, '/wp-json/wp/v2/settings', credential);
+  const s = (data ?? {}) as Record<string, unknown>;
+  return {
+    title: flatten(s.title),
+    description: flatten(s.description),
+    url: typeof s.url === 'string' ? s.url : '',
+    admin_email: typeof s.email === 'string' ? s.email : '',
+    timezone: typeof s.timezone === 'string' ? s.timezone : '',
+    language: typeof s.language === 'string' ? s.language : '',
+  };
+}
+
+/**
+ * Inventário completo. Plugins é obrigatório: se falhar, a varredura falhou.
+ * Os outros três são best-effort — um 403 em /users (falta list_users) não pode
+ * derrubar a varredura inteira de plugins —, mas o motivo da falha é guardado
+ * em `failures` para a UI poder dizer "não foi possível ler" em vez de mostrar
+ * uma aba vazia que parece um fato.
+ */
+export async function collectInventory(site: string, credential: Credential): Promise<SiteInventory> {
+  const plugins = await collectPlugins(site, credential);
+  const failures: Partial<Record<InventoryResource, string>> = {};
+
+  async function attempt<T>(resource: InventoryResource, run: () => Promise<T>, fallback: T): Promise<T> {
+    try {
+      return await run();
+    } catch (err) {
+      failures[resource] = err instanceof Error ? err.message : 'Falha desconhecida.';
+      return fallback;
+    }
+  }
+
+  const [themes, users, settings] = await Promise.all([
+    attempt('themes', () => fetchThemes(site, credential), [] as Theme[]),
+    attempt('users', () => fetchUsers(site, credential), [] as WpUser[]),
+    attempt('settings', () => fetchSettings(site, credential), null as WpSettings | null),
+  ]);
+
+  return { plugins, themes, users, settings, failures };
 }

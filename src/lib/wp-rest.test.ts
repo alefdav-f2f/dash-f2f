@@ -1,5 +1,20 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { WpError, fetchRawPlugins } from './wp-rest';
+import {
+  WpError,
+  collectInventory,
+  fetchRawPlugins,
+  fetchSettings,
+  fetchThemes,
+  fetchUsers,
+} from './wp-rest';
+
+// collectInventory -> collectPlugins -> latestVersions faria uma consulta real
+// ao Neon (DATABASE_URL não está setada em `npm test` puro). latestVersions já
+// tem seu próprio teste de integração manual (ver wporg.test.ts); aqui ela é
+// dependência de outra função, não o que está sob teste, então é stubada.
+vi.mock('./wporg', () => ({
+  latestVersions: vi.fn().mockResolvedValue(new Map()),
+}));
 
 const CRED = { user: 'admin', password: 'abcd EFGH ijkl MNOP qrst UVWX' };
 
@@ -79,5 +94,95 @@ describe('fetchRawPlugins', () => {
     await expect(fetchRawPlugins('https://exemplo.com', CRED)).rejects.toSatisfy(
       (e: Error) => !e.message.includes(CRED.password),
     );
+  });
+});
+
+describe('recursos adicionais', () => {
+  it('normaliza temas e identifica o ativo', async () => {
+    vi.stubGlobal('fetch', mockFetch(200, [
+      { stylesheet: 'twentytwentyfour', name: { raw: 'Twenty Twenty-Four' }, version: '1.2', status: 'active' },
+      { stylesheet: 'astra', name: { raw: 'Astra' }, version: '4.6.0', status: 'inactive' },
+    ]));
+
+    const themes = await fetchThemes('https://exemplo.com', CRED);
+    expect(themes).toEqual([
+      { stylesheet: 'twentytwentyfour', name: 'Twenty Twenty-Four', version: '1.2', is_active: true },
+      { stylesheet: 'astra', name: 'Astra', version: '4.6.0', is_active: false },
+    ]);
+  });
+
+  it('usuários trazem papéis achatados em string', async () => {
+    vi.stubGlobal('fetch', mockFetch(200, [
+      { id: 1, slug: 'admin', name: 'Admin', roles: ['administrator'] },
+      { id: 4, slug: 'editora', name: 'Editora', roles: ['editor', 'author'] },
+    ]));
+
+    const users = await fetchUsers('https://exemplo.com', CRED);
+    expect(users).toEqual([
+      { wp_user_id: 1, slug: 'admin', name: 'Admin', roles: 'administrator' },
+      { wp_user_id: 4, slug: 'editora', name: 'Editora', roles: 'editor,author' },
+    ]);
+  });
+
+  it('settings vira objeto chato com defaults', async () => {
+    vi.stubGlobal('fetch', mockFetch(200, {
+      title: 'Meu Site', description: 'Só outro site', url: 'https://exemplo.com',
+      email: 'admin@exemplo.com', timezone: 'America/Sao_Paulo', language: 'pt_BR',
+    }));
+
+    expect(await fetchSettings('https://exemplo.com', CRED)).toEqual({
+      title: 'Meu Site',
+      description: 'Só outro site',
+      url: 'https://exemplo.com',
+      admin_email: 'admin@exemplo.com',
+      timezone: 'America/Sao_Paulo',
+      language: 'pt_BR',
+    });
+  });
+});
+
+describe('collectInventory', () => {
+  const PLUGINS = [{ plugin: 'akismet/akismet', status: 'active', name: 'Akismet', version: '5.3.1' }];
+
+  /** Responde por rota, para simular um recurso falhando e os outros não. */
+  function routedFetch(map: Record<string, { status: number; body: unknown }>) {
+    return vi.fn().mockImplementation((url: string) => {
+      const hit = Object.entries(map).find(([path]) => String(url).includes(path));
+      const { status, body } = hit ? hit[1] : { status: 404, body: { code: 'rest_no_route' } };
+      return Promise.resolve(
+        new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } }),
+      );
+    });
+  }
+
+  it('um recurso que falha não derruba os outros, e o motivo fica registrado', async () => {
+    vi.stubGlobal('fetch', routedFetch({
+      '/wp/v2/plugins': { status: 200, body: PLUGINS },
+      '/wp/v2/themes': { status: 200, body: [{ stylesheet: 'astra', name: 'Astra', version: '4.6.0', status: 'active' }] },
+      '/wp/v2/users': { status: 403, body: { code: 'rest_user_cannot_view' } },
+      '/wp/v2/settings': { status: 200, body: { title: 'Meu Site' } },
+    }));
+
+    const inventory = await collectInventory('https://exemplo.com', CRED);
+
+    expect(inventory.plugins).toHaveLength(1);
+    expect(inventory.themes).toHaveLength(1);
+    expect(inventory.users).toEqual([]);
+    expect(inventory.settings?.title).toBe('Meu Site');
+    // O que importa: a aba vazia tem motivo, não é silêncio.
+    expect(inventory.failures.users).toBeTruthy();
+    expect(inventory.failures.themes).toBeUndefined();
+  });
+
+  it('tudo lendo deixa failures vazio', async () => {
+    vi.stubGlobal('fetch', routedFetch({
+      '/wp/v2/plugins': { status: 200, body: PLUGINS },
+      '/wp/v2/themes': { status: 200, body: [] },
+      '/wp/v2/users': { status: 200, body: [] },
+      '/wp/v2/settings': { status: 200, body: { title: 'X' } },
+    }));
+
+    const inventory = await collectInventory('https://exemplo.com', CRED);
+    expect(inventory.failures).toEqual({});
   });
 });
