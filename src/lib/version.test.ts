@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { compareVersions, isOutdated } from './version';
+import { compareVersions, isComparableVersion, isOutdated } from './version';
 
 describe('compareVersions', () => {
   it('compara segmentos numéricos', () => {
@@ -25,6 +25,32 @@ describe('compareVersions', () => {
   it('ignora segmento não numérico no meio sem explodir', () => {
     expect(compareVersions('1.0.x', '1.0.0')).toBe(0);
   });
+
+  it('lida com 4+ segmentos (core do WordPress usa 4)', () => {
+    expect(compareVersions('5.8.10.1', '5.8.10.2')).toBe(-1);
+  });
+
+  it('pré-lançamentos diferentes empatam entre si', () => {
+    expect(compareVersions('1.0.0-beta1', '1.0.0-alpha1')).toBe(0);
+  });
+});
+
+describe('isComparableVersion', () => {
+  it('true quando há ao menos um dígito na parte numérica', () => {
+    expect(isComparableVersion('3.21.5')).toBe(true);
+    expect(isComparableVersion('1.0.x')).toBe(true);
+    expect(isComparableVersion('1.2')).toBe(true);
+    expect(isComparableVersion('1.0.0-beta1')).toBe(true);
+  });
+
+  it('false quando não há dígito legível, incluindo null/undefined', () => {
+    expect(isComparableVersion('invalid')).toBe(false);
+    expect(isComparableVersion('N/A')).toBe(false);
+    expect(isComparableVersion('—')).toBe(false);
+    expect(isComparableVersion('')).toBe(false);
+    expect(isComparableVersion(null)).toBe(false);
+    expect(isComparableVersion(undefined)).toBe(false);
+  });
 });
 
 describe('isOutdated', () => {
@@ -39,5 +65,13 @@ describe('isOutdated', () => {
 
   it('false quando não há versão publicada conhecida', () => {
     expect(isOutdated('3.21.5', null)).toBe(false);
+  });
+
+  it('versão instalada ilegível NUNCA vira desatualizado', () => {
+    expect(isOutdated('invalid', '3.2.1')).toBe(false);
+  });
+
+  it('versão instalada como travessão (em dash) NUNCA vira desatualizado', () => {
+    expect(isOutdated('—', '3.2.1')).toBe(false);
   });
 });
