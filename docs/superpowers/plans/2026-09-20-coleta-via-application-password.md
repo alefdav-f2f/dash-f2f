@@ -959,9 +959,31 @@ function normalizeRawPlugin(raw: unknown): RawPlugin {
     // versão 0 e faria um plugin de versão desconhecida contar como pendente.
     version: p.version != null && String(p.version).trim() ? String(p.version) : null,
     is_active: p.status === 'active',
-    // "elementor/elementor" -> "elementor"; plugin de arquivo único -> ele mesmo.
-    slug: file.split('/')[0],
+    slug: wporgSlug(file, p.plugin_uri),
   };
+}
+
+/**
+ * Slug com que o wordpress.org conhece o plugin.
+ *
+ * O caminho do arquivo quase sempre serve ("elementor/elementor" -> "elementor"),
+ * mas não sempre: o Hello Dolly é `hello.php` na raiz, o que daria "hello" — e
+ * no repositório ele é "hello-dolly". Resultado: um plugin que ESTÁ no
+ * repositório apareceria como "atualização desconhecida".
+ *
+ * Quando o `plugin_uri` aponta para wordpress.org/plugins/<slug>, esse slug é
+ * declarado pelo próprio plugin e vale mais que o nome da pasta. Só aí ele
+ * ganha; no resto dos casos a pasta continua mandando.
+ *
+ * Achado rodando contra um WordPress real — os testes com fetch stubado não
+ * pegavam, porque afirmavam que "hello" vira slug "hello", o que é verdade e
+ * ainda assim é o slug errado.
+ */
+export function wporgSlug(file: string, pluginUri: unknown): string {
+  const fromDir = file.split('/')[0];
+  if (typeof pluginUri !== 'string') return fromDir;
+  const match = pluginUri.match(/wordpress\.org\/plugins\/([^/?#]+)/i);
+  return match ? match[1] : fromDir;
 }
 ```
 
