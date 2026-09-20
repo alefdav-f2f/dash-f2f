@@ -46,8 +46,8 @@ export function createMcpServer(ownerId: string, accountLabel: string): McpServe
     {
       instructions:
         `Leitura do painel dash-f2f para a conta ${accountLabel}. Expõe os sites WordPress ` +
-        'monitorados e o histórico de varreduras de plugins. Somente leitura: não altera ' +
-        'nem o painel nem os sites WordPress.',
+        'monitorados e o histórico de varreduras de plugins, temas e usuários. Somente leitura: ' +
+        'não altera nem o painel nem os sites WordPress.',
     },
   );
 
@@ -303,6 +303,51 @@ export function createMcpServer(ownerId: string, accountLabel: string): McpServe
           (r.last_ok_at ? ` · último sucesso: ${iso(r.last_ok_at)}` : ' · nunca teve sucesso'),
       );
       return reply(`${rows.length} site(s) com falha:\n${lines.join('\n')}`, rows);
+    },
+  );
+
+  /* ── 9. get_site_themes ──────────────────────────────────────────────── */
+  server.registerTool(
+    'get_site_themes',
+    {
+      title: 'Temas instalados',
+      description: 'Temas instalados no site na varredura mais recente, com versão e qual está ativo.',
+      inputSchema: { site_url: z.string().describe('URL do site, ex.: https://exemplo.com') },
+      annotations: READ_ONLY,
+    },
+    async ({ site_url }) => {
+      const found = await siteOrError(site_url);
+      if (!found.ok) return fail(found.error);
+      const themes = await q.latestThemes(ownerId, found.site.id);
+      if (themes.length === 0) return reply('Nenhum tema registrado para este site.', []);
+      const active = themes.find((t) => t.is_active);
+      return reply(
+        `${themes.length} tema(s) em ${displayUrl(found.site.url)}. Ativo: ${active ? `${active.name} ${active.version}` : 'nenhum identificado'}.`,
+        themes,
+      );
+    },
+  );
+
+  /* ── 10. get_site_users ──────────────────────────────────────────────── */
+  server.registerTool(
+    'get_site_users',
+    {
+      title: 'Usuários do site',
+      description:
+        'Usuários do WordPress na varredura mais recente, com papéis. Útil para auditar quantas contas de administrador existem.',
+      inputSchema: { site_url: z.string().describe('URL do site, ex.: https://exemplo.com') },
+      annotations: READ_ONLY,
+    },
+    async ({ site_url }) => {
+      const found = await siteOrError(site_url);
+      if (!found.ok) return fail(found.error);
+      const users = await q.latestUsers(ownerId, found.site.id);
+      if (users.length === 0) return reply('Nenhum usuário registrado para este site.', []);
+      const admins = users.filter((u) => u.roles.split(',').includes('administrator')).length;
+      return reply(
+        `${users.length} usuário(s) em ${displayUrl(found.site.url)}, ${admins} com papel de administrador.`,
+        users,
+      );
     },
   );
 

@@ -7,6 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "db:migrate": "node --env-file=.env.local scripts/migrate.mjs",
     "db:reader": "node --env-file=.env.local scripts/setup-reader-role.mjs",
     "mcp:build": "tsc -p mcp/tsconfig.json",
@@ -32,6 +34,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.3.5",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^3.2.7"
   }
 }

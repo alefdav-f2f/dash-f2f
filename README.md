@@ -1,16 +1,14 @@
 # dash-f2f
 
-Painel **somente leitura** do estado dos plugins de múltiplos sites WordPress,
-com login, histórico de varreduras e varredura diária automática.
-Next.js 16 (App Router) + TypeScript + Neon (Postgres + Auth).
+Painel **somente leitura** do estado dos plugins, temas, usuários e settings de
+múltiplos sites WordPress, com login, histórico de varreduras e varredura diária
+automática. Next.js 16 (App Router) + TypeScript + Neon (Postgres + Auth).
 
-Cada site monitorado precisa expor:
-
-```
-GET {SITE_URL}/wp-json/site-status/v1/plugins
-```
-
-devolvendo um array de `{ file, name, version, is_active, has_update, new_version? }`.
+Cada site monitorado precisa ter a REST API nativa do WordPress acessível e uma
+[Application Password](https://make.wordpress.org/core/2020/11/05/application-passwords-integration-guide/)
+cadastrada no painel (usuário + senha de aplicativo, gerada em wp-admin →
+Usuários → Perfil → Senhas de aplicativo). O painel lê `/wp-json/wp/v2/plugins`,
+`/themes`, `/users` e `/settings` com essa credencial.
 
 ---
 
@@ -48,10 +46,15 @@ npm start
 | `ALLOW_PRIVATE_HOSTS` | opcional | `1` libera Local WP / intranet |
 | `DATABASE_URL_MCP` | `npm run db:reader` | role somente-leitura; exigida pelo MCP (local e remoto) |
 | `DASH_F2F_OWNER_EMAIL` | manual | conta exposta pelo MCP **local** (o remoto usa o token) |
+| `CREDENTIALS_KEY` | gerado local (32 bytes base64) | cifra as Application Passwords (AES-256-GCM) — gere com `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"` |
 
 Na Vercel: replique todas, exceto `ALLOW_PRIVATE_HOSTS`. `CRON_SECRET` é enviado
 automaticamente pela plataforma como `Authorization: Bearer …` nas invocações de
 cron — basta existir no projeto.
+
+> **A chave não pode ser perdida nem rotacionada sem plano:** trocar
+> `CREDENTIALS_KEY` torna toda credencial já gravada indecifrável, e cada
+> cliente precisa cadastrar a Application Password de novo.
 
 ### Monitorar um WordPress local ou de intranet
 
@@ -78,29 +81,58 @@ ALLOW_PRIVATE_HOSTS=1 npm run dev
 ### Por que uma rota de API em vez de fetch no browser
 
 O browser não consegue ler `https://seusite.com/wp-json/...` de outro domínio a
-menos que o WordPress devolva cabeçalhos CORS — o que raramente acontece:
+menos que o WordPress devolva cabeçalhos CORS — o que raramente acontece. Além
+disso, a Application Password nunca pode chegar ao cliente:
 
 ```
-browser → GET /api/plugins?site=…   (mesma origem, sem CORS)
-           └─ servidor → GET https://exemplo.com/wp-json/site-status/v1/plugins
+browser → GET /api/plugins?site=…   (mesma origem, sem CORS, sem credencial)
+           └─ servidor → GET https://exemplo.com/wp-json/wp/v2/plugins
+                          (Basic auth com a Application Password do site)
 ```
 
 ---
 
 ## Garantia de somente leitura
 
-- `src/lib/wp.ts` é o **único** ponto que sai para o WordPress, e usa
-  `method: 'GET'`.
+- `src/lib/wp-rest.ts` é o **único** ponto que sai para o WordPress, e todo
+  método lá é `GET`.
 - As rotas expõem apenas `GET`; qualquer outro método responde `405`.
-- A UI não tem affordance de escrita: nada de ativar, desativar ou atualizar
-  plugin.
-- A **escrita existe só no nosso Postgres** (sites, scans, snapshots). Remover
-  um site apaga o histórico dele aqui — não toca no WordPress.
+- A UI não tem affordance de escrita: nada de ativar, desativar ou atualizar plugin.
+
+### O que mudou, e por quê importa
+
+O painel guarda uma Application Password por site. **Essa credencial tem poder de
+escrita no WordPress** — o core não oferece Application Password com escopo
+reduzido: ela herda todas as capabilities do usuário que a gerou, e ler a lista de
+plugins já exige `activate_plugins` (administrador).
+
+Ou seja: a garantia de somente-leitura deixou de ser imposta pela credencial e
+passou a ser imposta pelo nosso código. As barreiras são:
+
+1. `src/lib/wp-rest.ts` só faz `GET`, e é o único módulo com a credencial em mãos.
+2. A senha é cifrada em AES-256-GCM; a chave (`CREDENTIALS_KEY`) vive fora do banco.
+3. A role `dash_f2f_reader`, usada pelo MCP, tem `REVOKE ALL` em `site_credentials`
+   — o conector MCP, que é exposto publicamente, não consegue ler credencial.
+
+A role do MCP funciona por allow-list: ela recebe `SELECT` só nas tabelas de
+`READ_TABLES` em `scripts/setup-reader-role.mjs`, e tabela nova nasce sem acesso.
+
+A **escrita no nosso Postgres** (sites, credenciais, scans, snapshots) é a única
+escrita que o app faz. Remover um site apaga o histórico dele aqui — não toca no
+WordPress.
+
+### Cobertura de `has_update`
+
+O core do WordPress não expõe atualização pendente por REST — esse dado vive no
+transient `update_plugins`. O painel calcula comparando a versão instalada com a
+publicada em `api.wordpress.org`. **Plugin fora do repositório oficial (premium ou
+customizado) aparece marcado como "atualização desconhecida"** e nunca é contado
+como em dia.
 
 Conferência rápida:
 
 ```bash
-grep -rn "method:" src/
+grep -rn "method:" src/lib/wp-rest.ts
 grep -rn "POST\|PUT\|PATCH\|DELETE" src/app/api
 ```
 
@@ -123,27 +155,41 @@ src/
 │  ├─ Dashboard.tsx            orquestra a interação no cliente
 │  ├─ SiteForm · SavedSites · StatsRow · PluginTable · ChangeLog · States
 ├─ lib/
-│  ├─ auth.ts                  instância Neon Auth + helpers de sessão
-│  ├─ db.ts                    queries (sempre escopadas por owner_id)
-│  ├─ wp.ts                    leitura do WordPress (GET, timeout, normalização)
-│  ├─ diff.ts                  comparação entre duas varreduras
-│  ├─ plugins.ts               status, filtros, métricas
-│  └─ site-url.ts              normalização de URL + bloqueio de host interno
-sql/001_init.sql               schema
+│  ├─ auth.ts        instância Neon Auth + helpers de sessão
+│  ├─ db.ts          queries (sempre escopadas por owner_id)
+│  ├─ wp-rest.ts      único ponto de saída para o WordPress (GET, timeout, normalização)
+│  ├─ wporg.ts        versão publicada de cada plugin em api.wordpress.org, com cache
+│  ├─ inventory.ts    junta o inventário do WordPress com as versões do wordpress.org
+│  ├─ crypto.ts       cifra/decifra a Application Password (AES-256-GCM)
+│  ├─ credentials.ts  leitura/gravação da credencial de cada site
+│  ├─ version.ts      comparação de versões no estilo WordPress
+│  ├─ diff.ts         comparação entre duas varreduras
+│  ├─ plugins.ts      status, filtros, métricas
+│  └─ site-url.ts     normalização de URL + bloqueio de host interno
+sql/001_init.sql               schema inicial (mais migrations incrementais em sql/)
 scripts/migrate.mjs            runner de migrations
+scripts/setup-reader-role.mjs  cria/atualiza a role somente-leitura do MCP
 ```
 
 ### Schema
 
 ```
 sites (id, owner_id, url, label, created_at)         unique (owner_id, url)
+site_credentials (site_id PK, wp_user, password_cipher,
+                   created_at, updated_at, last_verified_at, last_error)
 scans (id, site_id, fetched_at, ok, error_kind, error_message,
        total, active, outdated, inactive, source)    source: manual | cron
-scan_plugins (scan_id, file, name, version, new_version, is_active, has_update)
+scan_plugins (scan_id, file, name, version, new_version, is_active, has_update,
+              update_source)                          update_source: site | wporg | unknown
+scan_themes (scan_id, stylesheet, name, version, is_active)
+scan_users (scan_id, wp_user_id, slug, name, roles)
+scan_settings (scan_id, title, description, url, admin_email, timezone, language)
+wporg_versions (slug PK, latest_version, checked_at)  cache compartilhado, dado público
 ```
 
 Uma varredura que falhou também vira linha em `scans` — saber quando um site
-parou de responder faz parte do histórico.
+parou de responder faz parte do histórico. `site_credentials` guarda no máximo
+uma credencial por site (`site_id` é a própria PK).
 
 ### Status do plugin
 
@@ -153,6 +199,10 @@ parou de responder faz parte do histórico.
 | ✅ | ❌ | Ativo |
 | ❌ | ✅ | Inativo (desatualizado) |
 | ❌ | ❌ | Inativo |
+
+Quando `update_source` é `'unknown'` (plugin fora do wordpress.org), a UI mostra
+"atualização desconhecida" em vez de tratar o plugin como em dia — ver
+[Cobertura de `has_update`](#cobertura-de-has_update).
 
 ### Tratamento de erros
 
@@ -165,6 +215,10 @@ parou de responder faz parte do histórico.
 | site fora do ar / timeout | 504 `network` | "Não foi possível ler este site" |
 | status ≥ 400 no site | 502 `http` | "O site respondeu com erro" |
 | JSON inesperado | 502 `bad_payload` | "Resposta inesperada" |
+| site sem credencial cadastrada | 400 `no_credential` | "Site sem credencial" |
+| credencial gravada não decifra | 400 `bad_credential` | "Credencial ilegível" — pede novo cadastro |
+| WordPress recusa a Application Password | 401 `unauthorized` | "Credencial recusada · 401" |
+| usuário sem `activate_plugins` no WP | 403 `forbidden` | "Sem permissão · 403" |
 
 Nenhuma delas derruba a aplicação, e todas ficam registradas no histórico.
 
@@ -189,9 +243,10 @@ npm run mcp:build
 npm run mcp:test      # 20 testes: isolamento por dono, negação de escrita, handshake real
 ```
 
-Oito ferramentas (`list_sites`, `get_site_status`, `list_outdated`,
+Dez ferramentas (`list_sites`, `get_site_status`, `list_outdated`,
 `get_scan_history`, `diff_scans`, `find_plugin`, `fleet_summary`,
-`list_failing_sites`), todas escopadas ao usuário de `DASH_F2F_OWNER_EMAIL`.
+`list_failing_sites`, `get_site_themes`, `get_site_users`), todas escopadas ao
+usuário de `DASH_F2F_OWNER_EMAIL`.
 
 - **Conectar ao seu agente:** [`docs/conectar-mcp.md`](./docs/conectar-mcp.md)
 - **Como funciona por dentro:** [`mcp/README.md`](./mcp/README.md)

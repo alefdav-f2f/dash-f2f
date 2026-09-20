@@ -4,8 +4,8 @@
 export class InvalidSiteUrlError extends Error {}
 
 /**
- * "  exemplo.com/ "                              -> "https://exemplo.com"
- * "http://a.com/wp-json/site-status/v1/plugins"  -> "http://a.com"
+ * "  exemplo.com/ "                     -> "https://exemplo.com"
+ * "http://a.com/wp-json/wp/v2/plugins"  -> "http://a.com"
  * @throws {InvalidSiteUrlError}
  */
 export function normalizeSiteUrl(raw: string): string {

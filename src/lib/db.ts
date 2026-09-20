@@ -4,7 +4,7 @@ import 'server-only';
 // nenhuma query de site aceita ser chamada sem o dono.
 
 import { neon } from '@neondatabase/serverless';
-import type { Plugin } from './types';
+import type { HealthCheck, Plugin, SiteInventory, Theme, WpSettings, WpUser } from './types';
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -148,14 +148,15 @@ export async function saveScan({
   // vez via unnest em vez de N inserts.
   if (list.length > 0) {
     await sql`
-      INSERT INTO scan_plugins (scan_id, file, name, version, new_version, is_active, has_update)
+      INSERT INTO scan_plugins (scan_id, file, name, version, new_version, is_active, has_update, update_source)
       SELECT ${scanId}, * FROM unnest(
         ${list.map((p) => p.file || p.name)}::text[],
         ${list.map((p) => p.name)}::text[],
         ${list.map((p) => p.version)}::text[],
         ${list.map((p) => p.new_version)}::text[],
         ${list.map((p) => p.is_active)}::boolean[],
-        ${list.map((p) => p.has_update)}::boolean[]
+        ${list.map((p) => p.has_update)}::boolean[],
+        ${list.map((p) => p.update_source)}::text[]
       )
       ON CONFLICT (scan_id, file) DO NOTHING
     `;
@@ -175,7 +176,7 @@ export async function recentScans(siteId: string, limit = 2): Promise<ScanRow[]>
 /** Snapshot de plugins de uma varredura. */
 export async function scanPlugins(scanId: string): Promise<Plugin[]> {
   return (await sql`
-    SELECT file, name, version, new_version, is_active, has_update
+    SELECT file, name, version, new_version, is_active, has_update, update_source
       FROM scan_plugins WHERE scan_id = ${scanId} ORDER BY name
   `) as Plugin[];
 }
@@ -188,4 +189,105 @@ export async function outdatedHistory(siteId: string, limit = 30): Promise<Array
      ORDER BY fetched_at DESC LIMIT ${limit}
   `) as Array<{ fetched_at: string; outdated: number }>;
   return rows.reverse();
+}
+
+/** Snapshots dos recursos além de plugins. Chamado logo após saveScan. */
+export async function saveInventoryExtras(
+  scanId: string,
+  { themes, users, settings, health }: Pick<SiteInventory, 'themes' | 'users' | 'settings' | 'health'>,
+): Promise<void> {
+  if (themes.length > 0) {
+    await sql`
+      INSERT INTO scan_themes (scan_id, stylesheet, name, version, is_active, has_update, new_version, update_source)
+      SELECT ${scanId}, * FROM unnest(
+        ${themes.map((t) => t.stylesheet)}::text[],
+        ${themes.map((t) => t.name)}::text[],
+        ${themes.map((t) => t.version)}::text[],
+        ${themes.map((t) => t.is_active)}::boolean[],
+        ${themes.map((t) => t.has_update)}::boolean[],
+        ${themes.map((t) => t.new_version)}::text[],
+        ${themes.map((t) => t.update_source)}::text[]
+      )
+      ON CONFLICT (scan_id, stylesheet) DO NOTHING
+    `;
+  }
+
+  if (users.length > 0) {
+    await sql`
+      INSERT INTO scan_users (scan_id, wp_user_id, slug, name, roles)
+      SELECT ${scanId}, * FROM unnest(
+        ${users.map((u) => u.wp_user_id)}::integer[],
+        ${users.map((u) => u.slug)}::text[],
+        ${users.map((u) => u.name)}::text[],
+        ${users.map((u) => u.roles)}::text[]
+      )
+      ON CONFLICT (scan_id, wp_user_id) DO NOTHING
+    `;
+  }
+
+  if (settings) {
+    await sql`
+      INSERT INTO scan_settings (scan_id, title, description, url, admin_email, timezone, language)
+      VALUES (${scanId}, ${settings.title}, ${settings.description}, ${settings.url},
+              ${settings.admin_email}, ${settings.timezone}, ${settings.language})
+      ON CONFLICT (scan_id) DO NOTHING
+    `;
+  }
+
+  if (health.length > 0) {
+    await sql`
+      INSERT INTO scan_health (scan_id, test, status, label, badge)
+      SELECT ${scanId}, * FROM unnest(
+        ${health.map((h) => h.test)}::text[],
+        ${health.map((h) => h.status)}::text[],
+        ${health.map((h) => h.label)}::text[],
+        ${health.map((h) => h.badge)}::text[]
+      )
+      ON CONFLICT (scan_id, test) DO NOTHING
+    `;
+  }
+}
+
+export async function scanThemes(scanId: string): Promise<Theme[]> {
+  return (await sql`
+    SELECT stylesheet, name, version, is_active, has_update, new_version, update_source
+      FROM scan_themes
+     WHERE scan_id = ${scanId} ORDER BY is_active DESC, name
+  `) as Theme[];
+}
+
+export async function scanUsers(scanId: string): Promise<WpUser[]> {
+  return (await sql`
+    SELECT wp_user_id, slug, name, roles FROM scan_users
+     WHERE scan_id = ${scanId} ORDER BY wp_user_id
+  `) as WpUser[];
+}
+
+export async function scanSettings(scanId: string): Promise<WpSettings | null> {
+  const rows = (await sql`
+    SELECT title, description, url, admin_email, timezone, language
+      FROM scan_settings WHERE scan_id = ${scanId}
+  `) as WpSettings[];
+  return rows[0] ?? null;
+}
+
+/**
+ * Site Health de uma varredura, pior status primeiro. Ordem pensada para quem
+ * vai operar: 'critical' precisa de ação agora, 'recommended' é a próxima
+ * fila, 'unknown' é "não sabemos" (não é sinal de saúde nem de problema, mas
+ * merece atenção antes do que um 'good' confirmado), e 'good' fecha a lista
+ * porque não exige nada de ninguém.
+ */
+export async function scanHealth(scanId: string): Promise<HealthCheck[]> {
+  return (await sql`
+    SELECT test, status, label, badge FROM scan_health
+     WHERE scan_id = ${scanId}
+     ORDER BY CASE status
+                WHEN 'critical'    THEN 0
+                WHEN 'recommended' THEN 1
+                WHEN 'unknown'     THEN 2
+                WHEN 'good'        THEN 3
+                ELSE 4
+              END, test
+  `) as HealthCheck[];
 }

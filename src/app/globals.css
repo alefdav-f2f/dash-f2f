@@ -263,6 +263,20 @@ tbody tr:hover td { background: var(--surface-2); }
 .badge-inactive-outdated::before { background: var(--amber); }
 .badge-inactive { color: var(--mute); }
 
+/* badges de saúde do site: crítico é o único que veste --red no app inteiro;
+   recomendado é atenção sem alarme (--amber); bom fica na variante muda. */
+.badge-critical { color: var(--red); border-color: rgba(238, 0, 0, .35); }
+.badge-critical::before { background: var(--red); }
+.badge-recommended { color: var(--amber); border-color: rgba(245, 166, 35, .35); }
+.badge-recommended::before { background: var(--amber); }
+.badge-good { color: var(--mute); }
+
+/* Coluna de status da aba Saúde: `.badge-unknown` nasceu como anotação
+   secundária (margin-left) ao lado de outro badge em PluginTable; aqui ele é
+   o único badge da célula, então tira o deslocamento para alinhar com as
+   outras linhas. Escopado a esta coluna para não afetar PluginTable. */
+td[data-col="saude-status"] .badge-unknown { margin-left: 0; }
+
 /* linha alterada desde a última varredura */
 .row-changed td:first-child { box-shadow: inset 2px 0 0 var(--amber); }
 .chg {
@@ -274,6 +288,19 @@ tbody tr:hover td { background: var(--surface-2); }
 .chg-new, .chg-update-available { color: var(--amber); border-color: rgba(245, 166, 35, .35); }
 .chg-updated, .chg-activated { color: var(--green); border-color: rgba(12, 206, 107, .3); }
 .chg-removed, .chg-deactivated { border-style: dashed; }
+/* Ganho (ou possível perda de controle) de administrator: o único evento desta
+   feature que justifica sair do cinza padrão. Preenchido, não só contornado,
+   para não competir visualmente com badges comuns — cobre `admin-elevated`,
+   um usuário novo que já chega como admin, e mudança de admin_email (o mesmo
+   risco de account takeover, com outra cara). */
+.chg-admin-elevated {
+  color: var(--red); background: rgba(238, 0, 0, .14); border-color: rgba(238, 0, 0, .5); font-weight: 600;
+}
+/* Perda de administrator é notável por outro motivo: pode ser uma remoção
+   legítima, ou o rastro de quem promoveu a si mesmo e removeu o admin
+   original depois. Mesmo vermelho, sem preenchimento — distingue "ganhou
+   poder" de "perdeu poder" sem inventar uma terceira cor. */
+.chg-admin-demoted { color: var(--red); border-color: rgba(238, 0, 0, .4); }
 
 /* ── changelog ────────────────────────────────────────────────────────── */
 .changelog-none { font-size: 13px; color: var(--mute); margin-bottom: 20px; }
@@ -286,12 +313,28 @@ tbody tr:hover td { background: var(--surface-2); }
   padding: 13px 18px; border-bottom: 1px solid var(--line);
 }
 .changelog-head .count { font-family: var(--font-code); font-size: 12px; letter-spacing: 0; color: var(--mute); }
+/* A linha mais importante do componente: deixa explícito que isto é uma
+   comparação de estado entre duas varreduras, não um log de quem fez o quê.
+   Sempre visível — nunca em tooltip — porque é o que evita que alguém trate
+   o painel como se tivesse um audit trail que o WordPress não fornece. */
+.changelog-disclaimer {
+  font-size: 12px; line-height: 18px; color: var(--body);
+  padding: 10px 18px; border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
+}
+.changelog-group + .changelog-group { border-top: 1px solid var(--line); }
+.changelog-group-head {
+  padding: 10px 18px 0; font-size: 11px; letter-spacing: 0; color: var(--faint);
+}
 .changelog-list { list-style: none; }
 .changelog-list li {
   display: flex; align-items: center; gap: 10px;
   padding: 10px 18px; border-bottom: 1px solid var(--line); font-size: 13px;
 }
 .changelog-list li:last-child { border-bottom: none; }
+/* Realce da linha inteira nos quatro casos de risco de administrator — o
+   badge já muda de cor, isto reforça sem depender só dele. */
+.chg-row-alert { box-shadow: inset 2px 0 0 var(--red); background: rgba(238, 0, 0, .04); }
 .changelog-more { color: var(--faint); font-size: 12px; }
 .chg-name { font-weight: 500; }
 .chg-ver { font-family: var(--font-code); font-size: 12px; letter-spacing: 0; color: var(--faint); }
@@ -381,6 +424,17 @@ tbody tr:hover td { background: var(--surface-2); }
 .conn-foot p { font-size: 14px; line-height: 22px; color: var(--body); max-width: 62ch; }
 
 /* ── responsivo ───────────────────────────────────────────────────────── */
+/* ── credencial por site ─────────────────────────────────────────────── */
+/* Chrome do card (borda, raio, fundo, padding) vem de .panel-box, já usado
+   em .load/.err — aqui só o layout interno do formulário. Os labels usam
+   .eyebrow, o mesmo padrão de SiteForm/Connectors (sentence case: o v3
+   abandonou uppercase nos rótulos, então nada específico foi criado aqui). */
+.cred { display: grid; gap: 8px; }
+.cred-help { font-size: 13px; line-height: 1.5; color: var(--mute); margin: 0 0 4px; }
+.cred-error { font-size: 13px; color: var(--red); margin: 0; }
+.cred-ok { font-size: 13px; color: var(--green); margin: 0; }
+.cred-actions { display: flex; gap: 8px; margin-top: 4px; }
+
 @media (max-width: 900px) {
   .shell { grid-template-columns: 1fr; padding: 20px 16px; gap: 20px; }
   .side { border-bottom: 1px solid var(--line); padding-bottom: 20px; }
@@ -405,4 +459,36 @@ tbody tr:hover td { background: var(--surface-2); }
   td[data-col="status"] { margin-top: 12px; }
   .row-changed td:first-child { box-shadow: none; }
   .table-empty { display: block; padding: 32px 0; }
+}
+
+.badge-unknown { margin-left: 6px; opacity: .7; font-style: italic; }
+.coverage { font-size: 13px; color: var(--mute); margin: 8px 0 0; }
+
+/* linha de alerta acima das abas quando há checagem de saúde crítica — o
+   único outro lugar do app, além do badge em si, que usa --red. Deliberado:
+   não é um banner, é uma linha de texto que aponta para a aba Saúde. */
+.health-critical { font-size: 13px; line-height: 20px; color: var(--red); margin: 8px 0 0; }
+
+/* ── inventário: abas de temas, usuários e configurações ─────────────── */
+.inv { display: flex; flex-direction: column; gap: 14px; }
+
+/* aba cujo recurso falhou ao ler: o vermelho de erro no chip, sem desabilitar
+   o botão — desabilitar esconderia a explicação atrás de um controle inerte. */
+.chip-fail { color: var(--red); }
+.chip-fail::after {
+  content: "";
+  display: inline-block; width: 5px; height: 5px; margin-left: 7px;
+  border-radius: 50%; background: var(--red); vertical-align: 2px;
+}
+
+/* papéis do usuário: um badge por role (roles chega como string "a,b,c") */
+.roles { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* lista de definição das configurações do site */
+.dl { display: grid; gap: 14px; }
+.dl-row { display: grid; grid-template-columns: 180px 1fr; gap: 12px; align-items: baseline; }
+.dl-row dd { word-break: break-word; }
+
+@media (max-width: 900px) {
+  .dl-row { grid-template-columns: 1fr; gap: 4px; }
 }
