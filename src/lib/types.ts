@@ -12,8 +12,16 @@ export type Plugin = {
   update_source: UpdateSource;
 };
 
-/** De onde saiu o veredito de atualização pendente. */
-export type UpdateSource = 'wporg' | 'unknown';
+/**
+ * De onde saiu o veredito de atualização pendente. Procedência, não qualidade.
+ *  - 'wporg'   — comparamos a versão instalada com a publicada no wordpress.org
+ *  - 'site'    — o próprio site afirmou, via o endpoint customizado antigo, que
+ *                lia o transient `update_plugins`. Só existe em histórico
+ *                anterior à migração; nenhum código novo produz este valor.
+ *  - 'unknown' — não dá para afirmar nada (plugin fora do repositório oficial,
+ *                ou versão instalada ilegível).
+ */
+export type UpdateSource = 'wporg' | 'site' | 'unknown';
 
 /** Plugin como sai do /wp/v2/plugins, antes de cruzar com o wordpress.org. */
 export type RawPlugin = {

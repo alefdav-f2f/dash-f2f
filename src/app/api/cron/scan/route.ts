@@ -4,7 +4,9 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { listAllSites, saveScan } from '@/lib/db';
-import { fetchSitePlugins, WpError } from '@/lib/wp';
+import { collectPlugins, WpError } from '@/lib/wp-rest';
+import { getCredential, markCredentialResult } from '@/lib/credentials';
+import { SecretPayloadError } from '@/lib/crypto';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -29,13 +31,45 @@ export async function GET(request: NextRequest) {
   const queue = [...sites];
   async function worker() {
     for (let site = queue.shift(); site; site = queue.shift()) {
+      // Credencial ilegível é problema de um site; não pode derrubar a
+      // varredura dos outros. Já CredentialsKeyError sobe e aborta o cron
+      // inteiro de propósito: sem a chave, nenhum site seria varrido mesmo.
+      let credential;
       try {
-        const plugins = await fetchSitePlugins(site.url);
+        credential = await getCredential(site.id);
+      } catch (err) {
+        if (!(err instanceof SecretPayloadError)) throw err;
+        await saveScan({
+          siteId: site.id,
+          source: 'cron',
+          errorKind: 'bad_credential',
+          errorMessage: 'Credencial armazenada ilegível.',
+        });
+        await markCredentialResult(site.id, 'Credencial armazenada ilegível.');
+        results.push({ url: site.url, ok: false, error: 'credencial ilegível' });
+        continue;
+      }
+
+      if (!credential) {
+        await saveScan({
+          siteId: site.id,
+          source: 'cron',
+          errorKind: 'no_credential',
+          errorMessage: 'Site sem Application Password cadastrada.',
+        });
+        results.push({ url: site.url, ok: false, error: 'sem credencial' });
+        continue;
+      }
+
+      try {
+        const plugins = await collectPlugins(site.url, credential);
         await saveScan({ siteId: site.id, source: 'cron', plugins });
+        await markCredentialResult(site.id, null);
         results.push({ url: site.url, ok: true, outdated: plugins.filter((p) => p.has_update).length });
       } catch (err) {
         const wpErr = err instanceof WpError ? err : new WpError('network', 502, 'Erro inesperado.');
         await saveScan({ siteId: site.id, source: 'cron', errorKind: wpErr.kind, errorMessage: wpErr.message });
+        await markCredentialResult(site.id, wpErr.message);
         results.push({ url: site.url, ok: false, error: wpErr.message });
       }
     }

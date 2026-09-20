@@ -10,7 +10,9 @@ import 'server-only';
 // credencial e passou a ser garantida por este módulo. Não adicione outro método.
 
 import { isPrivateHost } from './site-url';
-import type { ApiErrorKind, RawPlugin } from './types';
+import { latestVersions } from './wporg';
+import { mergePluginVersions } from './inventory';
+import type { ApiErrorKind, Plugin, RawPlugin } from './types';
 
 const TIMEOUT_MS = 12_000;
 
@@ -121,4 +123,14 @@ function normalizeRawPlugin(raw: unknown): RawPlugin {
     // "elementor/elementor" -> "elementor"; plugin de arquivo único -> ele mesmo.
     slug: file.split('/')[0],
   };
+}
+
+/**
+ * Varredura completa de plugins: lê o site, cruza com o wordpress.org e
+ * devolve o tipo que a UI e o histórico já consomem.
+ */
+export async function collectPlugins(site: string, credential: Credential): Promise<Plugin[]> {
+  const raw = await fetchRawPlugins(site, credential);
+  const latest = await latestVersions(raw.map((p) => p.slug));
+  return mergePluginVersions(raw, latest);
 }

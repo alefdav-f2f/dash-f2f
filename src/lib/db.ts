@@ -148,14 +148,15 @@ export async function saveScan({
   // vez via unnest em vez de N inserts.
   if (list.length > 0) {
     await sql`
-      INSERT INTO scan_plugins (scan_id, file, name, version, new_version, is_active, has_update)
+      INSERT INTO scan_plugins (scan_id, file, name, version, new_version, is_active, has_update, update_source)
       SELECT ${scanId}, * FROM unnest(
         ${list.map((p) => p.file || p.name)}::text[],
         ${list.map((p) => p.name)}::text[],
         ${list.map((p) => p.version)}::text[],
         ${list.map((p) => p.new_version)}::text[],
         ${list.map((p) => p.is_active)}::boolean[],
-        ${list.map((p) => p.has_update)}::boolean[]
+        ${list.map((p) => p.has_update)}::boolean[],
+        ${list.map((p) => p.update_source)}::text[]
       )
       ON CONFLICT (scan_id, file) DO NOTHING
     `;
@@ -175,7 +176,7 @@ export async function recentScans(siteId: string, limit = 2): Promise<ScanRow[]>
 /** Snapshot de plugins de uma varredura. */
 export async function scanPlugins(scanId: string): Promise<Plugin[]> {
   return (await sql`
-    SELECT file, name, version, new_version, is_active, has_update
+    SELECT file, name, version, new_version, is_active, has_update, update_source
       FROM scan_plugins WHERE scan_id = ${scanId} ORDER BY name
   `) as Plugin[];
 }
