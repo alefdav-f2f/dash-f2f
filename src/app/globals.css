@@ -494,6 +494,20 @@ td[data-col="saude-status"] .badge-unknown { margin-left: 0; }
   border-radius: 50%; background: var(--red); vertical-align: 2px;
 }
 
+/* aba cujo recurso leu certo, mas tem algo que pede uma segunda olhada
+   (atualização pendente, checagem de saúde fora de 'good', usuários todos
+   admin...). Mesmo vocabulário visual de `.chip-fail` (ponto depois do
+   rótulo), mas --amber, não --red: --red neste app é reservado para "não
+   conseguimos ler" e para alarme (`.badge-critical`); reusar para "atenção"
+   apagaria a diferença entre "isto quebrou" e "isto merece um olhar". Texto
+   do chip fica na cor normal — só o ponto muda — e o motivo vem por
+   `title`/`aria-label` no botão, nunca só pela cor do ponto. */
+.chip-attn::after {
+  content: "";
+  display: inline-block; width: 5px; height: 5px; margin-left: 7px;
+  border-radius: 50%; background: var(--amber); vertical-align: 2px;
+}
+
 /* papéis do usuário: um badge por role (roles chega como string "a,b,c") */
 .roles { display: flex; flex-wrap: wrap; gap: 6px; }
 
