@@ -7,7 +7,7 @@
 // linha nestas consultas.
 
 import { db } from './db';
-import type { Plugin } from '../types';
+import type { HealthStatus, Plugin, Theme, WpSettings, WpUser } from '../types';
 
 export type SiteRow = {
   id: string;
@@ -278,4 +278,93 @@ export async function latestUsers(siteId: string): Promise<UserRow[]> {
        AND sc.id = (SELECT id FROM scans WHERE site_id = ${siteId} AND ok = true ORDER BY fetched_at DESC LIMIT 1)
      ORDER BY u.wp_user_id
   `) as UserRow[];
+}
+
+export type HealthRow = { test: string; status: HealthStatus; label: string; badge: string };
+
+/**
+ * Site Health de uma varredura específica, pior status primeiro — mesma
+ * ordem usada pelo painel (`scanHealth` em src/lib/db.ts): 'critical' exige
+ * ação agora, 'unknown' é "não sabemos" (não é sinal de saúde), 'good' fecha
+ * a lista.
+ */
+export async function scanHealth(scanId: string): Promise<HealthRow[]> {
+  const sql = db();
+  return (await sql`
+    SELECT test, status, label, badge FROM scan_health
+     WHERE scan_id = ${scanId}
+     ORDER BY CASE status
+                WHEN 'critical'    THEN 0
+                WHEN 'recommended' THEN 1
+                WHEN 'unknown'     THEN 2
+                WHEN 'good'        THEN 3
+                ELSE 4
+              END, test
+  `) as HealthRow[];
+}
+
+export type CriticalHealthRow = {
+  site_url: string;
+  fetched_at: string;
+  test: string;
+  label: string;
+  badge: string;
+};
+
+/**
+ * Uma linha por (site, checagem crítica) na varredura bem-sucedida mais
+ * recente de cada site da equipe. Varreduras que falharam por completo
+ * (scans.ok = false) não entram aqui — essa pergunta já é `failingSites()`;
+ * misturar as duas faria o mesmo site aparecer em dois lugares por motivos
+ * diferentes ("não conseguimos varrer" vs. "varremos e o Site Health acusou
+ * um problema").
+ */
+export async function criticalHealthChecks(): Promise<CriticalHealthRow[]> {
+  const sql = db();
+  return (await sql`
+    WITH last_ok AS (
+      SELECT DISTINCT ON (sc.site_id) sc.id, sc.site_id, sc.fetched_at
+        FROM scans sc
+       WHERE sc.ok = true
+       ORDER BY sc.site_id, sc.fetched_at DESC
+    )
+    SELECT s.url AS site_url, last_ok.fetched_at, h.test, h.label, h.badge
+      FROM last_ok
+      JOIN scan_health h ON h.scan_id = last_ok.id
+      JOIN sites s ON s.id = last_ok.site_id
+     WHERE h.status = 'critical'
+     ORDER BY s.url, h.test
+  `) as CriticalHealthRow[];
+}
+
+/**
+ * Usuários de uma varredura específica (não necessariamente a mais recente
+ * de um site) — usado por get_recent_changes para comparar duas varreduras
+ * já escolhidas pelo chamador.
+ */
+export async function scanUsers(scanId: string): Promise<WpUser[]> {
+  const sql = db();
+  return (await sql`
+    SELECT wp_user_id, slug, name, roles FROM scan_users
+     WHERE scan_id = ${scanId} ORDER BY wp_user_id
+  `) as WpUser[];
+}
+
+/** Temas de uma varredura específica — mesmo uso que `scanUsers` acima. */
+export async function scanThemes(scanId: string): Promise<Theme[]> {
+  const sql = db();
+  return (await sql`
+    SELECT stylesheet, name, version, is_active, has_update, new_version, update_source
+      FROM scan_themes WHERE scan_id = ${scanId} ORDER BY is_active DESC, name
+  `) as Theme[];
+}
+
+/** Configurações (wp_options) de uma varredura específica — mesmo uso que `scanUsers` acima. */
+export async function scanSettings(scanId: string): Promise<WpSettings | null> {
+  const sql = db();
+  const rows = (await sql`
+    SELECT title, description, url, admin_email, timezone, language
+      FROM scan_settings WHERE scan_id = ${scanId}
+  `) as WpSettings[];
+  return rows[0] ?? null;
 }

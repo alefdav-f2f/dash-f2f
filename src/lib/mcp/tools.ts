@@ -8,10 +8,30 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 
 import * as q from './queries';
-import { CHANGE_LABEL, diffScans } from '../diff';
+import { CHANGE_LABEL, diffScans, diffSettings, diffThemes, diffUsers, type Change } from '../diff';
 import { displayUrl, normalizeSiteUrl } from '../site-url';
 
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, openWorldHint: false } as const;
+
+/** Rótulo em pt-BR do status de uma checagem de Site Health. Mesmo vocabulário
+ *  da UI (ChangeLog.tsx / InventoryTabs.tsx): 'unknown' nunca vira "saudável". */
+const HEALTH_STATUS_LABEL: Record<string, string> = {
+  good: 'boa',
+  recommended: 'recomendado',
+  critical: 'crítico',
+  unknown: 'desconhecido',
+};
+
+const hasAdminRole = (roles: string) =>
+  roles.split(',').map((r) => r.trim()).includes('administrator');
+
+/** Usuário que já nasceu administrator entre duas varreduras — mesmo risco de
+ *  uma elevação, mas o `kind` do diff continua 'new'. Mesma regra da UI
+ *  (ChangeLog.tsx `isNewAdminUser`): quem decide que isso merece destaque é
+ *  quem lê o diff, não `diffUsers`. */
+function isNewAdminUser(c: Change): boolean {
+  return c.resource === 'user' && c.kind === 'new' && !!c.to && hasAdminRole(c.to);
+}
 
 /** Resposta padrão: um resumo legível + o JSON completo. */
 function reply(summary: string, data: unknown) {
@@ -355,6 +375,147 @@ export function createMcpServer(accountLabel: string): McpServer {
       return reply(
         `${users.length} usuário(s) em ${displayUrl(found.site.url)}, ${admins} com papel de administrador.`,
         users,
+      );
+    },
+  );
+
+  /* ── 11. get_site_health ─────────────────────────────────────────────── */
+  server.registerTool(
+    'get_site_health',
+    {
+      title: 'Site Health de um site',
+      description:
+        'As checagens de Site Health (o diagnóstico nativo do WordPress) da varredura bem-sucedida mais recente do site: teste, status (bom, recomendado, crítico ou desconhecido) e o rótulo que o WordPress usa. "Desconhecido" significa que a checagem não pôde ser verificada nesta varredura — nunca resuma isso como saudável.',
+      inputSchema: { site_url: z.string().describe('URL do site, ex.: https://exemplo.com') },
+      annotations: READ_ONLY,
+    },
+    async ({ site_url }) => {
+      const found = await siteOrError(site_url);
+      if (!found.ok) return fail(found.error);
+
+      const scan = await q.latestOkScan(found.site.id);
+      if (!scan) return reply(`Nenhuma varredura bem-sucedida para ${displayUrl(found.site.url)}.`, null);
+
+      const checks = await q.scanHealth(scan.id);
+      if (checks.length === 0) {
+        return reply(
+          `${displayUrl(found.site.url)} não tem resultado de Site Health nesta varredura (${iso(scan.fetched_at)}).`,
+          { site: found.site.url, fetched_at: scan.fetched_at, checks: [] },
+        );
+      }
+
+      const critical = checks.filter((c) => c.status === 'critical');
+      const unknown = checks.filter((c) => c.status === 'unknown');
+      const lines = checks.map(
+        (c) => `${HEALTH_STATUS_LABEL[c.status] ?? c.status} · ${c.label || c.test}${c.badge ? ` (${c.badge})` : ''}`,
+      );
+
+      let summary: string;
+      if (critical.length > 0) {
+        summary =
+          `${displayUrl(found.site.url)} tem ${critical.length} checagem(ns) crítica(s) em ${iso(scan.fetched_at)}: ` +
+          `${critical.map((c) => c.label || c.test).join(', ')}.\n${lines.join('\n')}`;
+      } else if (unknown.length > 0) {
+        summary =
+          `${displayUrl(found.site.url)} sem checagem crítica em ${iso(scan.fetched_at)}, mas ` +
+          `${unknown.length} não pôde ser verificada — isso não é o mesmo que saudável.\n${lines.join('\n')}`;
+      } else {
+        summary = `${displayUrl(found.site.url)} passou nas ${checks.length} checagens de Site Health em ${iso(scan.fetched_at)}.\n${lines.join('\n')}`;
+      }
+
+      return reply(summary, { site: found.site.url, fetched_at: scan.fetched_at, checks });
+    },
+  );
+
+  /* ── 12. list_unhealthy_sites ────────────────────────────────────────── */
+  server.registerTool(
+    'list_unhealthy_sites',
+    {
+      title: 'Sites com Site Health crítico',
+      description:
+        'Cross-site: todo site cuja varredura bem-sucedida mais recente tem ao menos uma checagem de Site Health crítica, com quais checagens. Não inclui sites cuja última varredura falhou por completo (sem resposta, erro de rede ou autenticação) — esses são a tool list_failing_sites; misturar as duas faria o mesmo site aparecer por dois motivos diferentes ("não conseguimos varrer" vs. "varremos e o Site Health acusou um problema").',
+      inputSchema: {},
+      annotations: READ_ONLY,
+    },
+    async () => {
+      const rows = await q.criticalHealthChecks();
+      if (rows.length === 0) return reply('Nenhum site com checagem de Site Health crítica.', []);
+
+      const bySite = new Map<string, { fetched_at: string; checks: Array<{ test: string; label: string; badge: string }> }>();
+      for (const r of rows) {
+        const entry = bySite.get(r.site_url) ?? { fetched_at: r.fetched_at, checks: [] };
+        entry.checks.push({ test: r.test, label: r.label, badge: r.badge });
+        bySite.set(r.site_url, entry);
+      }
+
+      const sites = [...bySite.entries()].map(([site_url, v]) => ({ site_url, fetched_at: v.fetched_at, checks: v.checks }));
+      const lines = sites.map(
+        (s) => `${displayUrl(s.site_url)} · ${s.checks.map((c) => c.label || c.test).join(', ')}`,
+      );
+      return reply(`${sites.length} site(s) com Site Health crítico:\n${lines.join('\n')}`, sites);
+    },
+  );
+
+  /* ── 13. get_recent_changes ──────────────────────────────────────────── */
+  server.registerTool(
+    'get_recent_changes',
+    {
+      title: 'Mudanças recentes de um site',
+      description:
+        'Compara as duas varreduras bem-sucedidas mais recentes de um site — usuários, temas e configurações — e lista o que é diferente entre as duas. Isto é detecção de mudança, não um log de auditoria: o WordPress não registra quem fez cada alteração, só o estado do site a cada varredura. Não descreva o resultado como "o usuário X fez Y"; o máximo que os dados sustentam é "isso mudou entre uma varredura e a outra". Se o site tiver menos de duas varreduras bem-sucedidas, a tool diz que não há o que comparar — isso é diferente de "nada mudou".',
+      inputSchema: { site_url: z.string().describe('URL do site, ex.: https://exemplo.com') },
+      annotations: READ_ONLY,
+    },
+    async ({ site_url }) => {
+      const found = await siteOrError(site_url);
+      if (!found.ok) return fail(found.error);
+
+      const recent = (await q.scans(found.site.id, q.MAX_LIMIT)).filter((s) => s.ok);
+      if (recent.length < 2) {
+        return reply(
+          `${displayUrl(found.site.url)} tem menos de duas varreduras bem-sucedidas — ainda não há o que comparar.`,
+          { site: found.site.url, comparable: false, changes: [] },
+        );
+      }
+
+      const [toScan, fromScan] = recent; // scans() vem da mais nova para a mais antiga
+      const [users, themes, settings, prevUsers, prevThemes, prevSettings] = await Promise.all([
+        q.scanUsers(toScan.id),
+        q.scanThemes(toScan.id),
+        q.scanSettings(toScan.id),
+        q.scanUsers(fromScan.id),
+        q.scanThemes(fromScan.id),
+        q.scanSettings(fromScan.id),
+      ]);
+
+      const changes = [
+        ...diffUsers(users, prevUsers),
+        ...diffThemes(themes, prevThemes),
+        ...diffSettings(settings, prevSettings),
+      ];
+
+      if (changes.length === 0) {
+        return reply(
+          `Nada mudou em usuários, temas ou configurações de ${displayUrl(found.site.url)} entre ${iso(fromScan.fetched_at)} e ${iso(toScan.fetched_at)}.`,
+          { site: found.site.url, comparable: true, from_scan_id: fromScan.id, to_scan_id: toScan.id, changes: [] },
+        );
+      }
+
+      // admin-elevated e usuário já criado como administrator primeiro: são o
+      // sinal de maior risco (mesmo critério de destaque de ChangeLog.tsx).
+      const priority = (c: Change) => (c.kind === 'admin-elevated' || isNewAdminUser(c) ? 0 : 1);
+      const sorted = [...changes].sort((a, b) => priority(a) - priority(b));
+
+      const lines = sorted.map((c) => {
+        const versions = c.from && c.to ? ` ${c.from} → ${c.to}` : c.to ? ` ${c.to}` : c.from ? ` ${c.from}` : '';
+        const flag = isNewAdminUser(c) ? ' (criado como administrador)' : '';
+        return `[${c.resource ?? 'plugin'}] ${CHANGE_LABEL[c.kind]}: ${c.name}${versions}${flag}`;
+      });
+
+      return reply(
+        `${changes.length} mudança(s) em ${displayUrl(found.site.url)} entre ${iso(fromScan.fetched_at)} e ${iso(toScan.fetched_at)} ` +
+          `(comparação de estado, não log de auditoria):\n${lines.join('\n')}`,
+        { site: found.site.url, comparable: true, from_scan_id: fromScan.id, to_scan_id: toScan.id, changes: sorted },
       );
     },
   );
