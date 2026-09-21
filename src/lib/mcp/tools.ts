@@ -1,4 +1,4 @@
-// As 8 ferramentas do MCP, registradas uma vez e servidas pelos dois
+// As ferramentas do MCP, registradas uma vez e servidas pelos dois
 // transportes: stdio (mcp/src/server.ts) e HTTP remoto (/api/mcp).
 //
 // Somente leitura em três camadas: a role do banco só tem SELECT, as consultas
