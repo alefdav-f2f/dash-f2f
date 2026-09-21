@@ -30,6 +30,7 @@ export default async function Page() {
           lastOk: s.last_ok,
           lastOutdated: s.last_outdated,
           lastErrorKind: s.last_error_kind,
+          addedBy: s.added_by_name ?? s.added_by_email ?? null,
           credential: cred
             ? { wp_user: cred.wp_user, last_verified_at: cred.last_verified_at, last_error: cred.last_error }
             : null,

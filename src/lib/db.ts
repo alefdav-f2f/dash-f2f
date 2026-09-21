@@ -24,6 +24,9 @@ export type SiteWithLatest = SiteRow & {
   last_outdated: number | null;
   last_total: number | null;
   last_error_kind: string | null;
+  /** Quem adicionou o site. Pode ser null — id em `added_by` sem linha em `app_users` (pré-Task 3 ou fixture de teste). */
+  added_by_email: string | null;
+  added_by_name: string | null;
 };
 
 export type ScanRow = {
@@ -69,7 +72,9 @@ export async function listSites(): Promise<SiteWithLatest[]> {
            last.ok          AS last_ok,
            last.outdated    AS last_outdated,
            last.total       AS last_total,
-           last.error_kind  AS last_error_kind
+           last.error_kind  AS last_error_kind,
+           au.email         AS added_by_email,
+           au.name          AS added_by_name
       FROM sites s
       LEFT JOIN LATERAL (
         SELECT fetched_at, ok, outdated, total, error_kind
@@ -78,6 +83,9 @@ export async function listSites(): Promise<SiteWithLatest[]> {
          ORDER BY fetched_at DESC
          LIMIT 1
       ) last ON true
+      -- LEFT: added_by pode apontar para um id sem linha em app_users
+      -- (site de antes da Task 3, fixture de teste) — não pode sumir da lista.
+      LEFT JOIN app_users au ON au.id = s.added_by
      ORDER BY s.created_at
   `) as SiteWithLatest[];
 }
