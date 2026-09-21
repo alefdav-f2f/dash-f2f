@@ -5,31 +5,40 @@ e o histórico de varreduras de plugins — **somente leitura**.
 
 As ferramentas vivem em `src/lib/mcp/tools.ts`, compartilhadas com o conector
 remoto (`/api/mcp`, autenticado por token gerado em `/conectores`). Este pacote
-é só o transporte stdio: resolve a conta por `DASH_F2F_OWNER_EMAIL` e liga o
+é só o transporte stdio: valida a conta de `DASH_F2F_OWNER_EMAIL` e liga o
 servidor à entrada/saída padrão.
 
 ## Garantia de somente leitura
 
 Três camadas independentes:
 
-1. **Banco** — o servidor conecta com a role `dash_f2f_reader`, que tem
-   `GRANT SELECT` nas quatro tabelas e nada mais. `INSERT`/`UPDATE`/`DELETE`
-   respondem `permission denied` (coberto por teste).
-2. **Consultas** — SQL fixo e parametrizado em `src/queries.ts`. Não existe tool
-   que aceite SQL do agente.
+1. **Banco** — o servidor conecta com a role `dash_f2f_reader`, que recebe
+   `GRANT SELECT` só nas tabelas de `READ_TABLES` em
+   `scripts/setup-reader-role.mjs` — allow-list: tabela nova nasce sem acesso.
+   `INSERT`/`UPDATE`/`DELETE` respondem `permission denied`, e `site_credentials`
+   e `api_tokens` ficam fora da lista (tudo coberto por teste).
+2. **Consultas** — SQL fixo e parametrizado em `src/lib/mcp/queries.ts`. Não
+   existe tool que aceite SQL do agente.
 3. **Protocolo** — toda tool é anotada com `readOnlyHint: true`.
 
 Além disso, o WordPress não é tocado: o MCP lê o banco do painel, nunca os sites.
 
-## Escopo por usuário
+## Quem pode usar, e o que enxerga
 
-`DASH_F2F_OWNER_EMAIL` define de quem são os dados. O servidor resolve esse
-e-mail para o `owner_id` **uma vez, no boot**, e injeta esse id em todas as
-queries. Nenhuma tool aceita dono por parâmetro — o agente não consegue pedir os
-dados de outra conta (coberto por teste de isolamento).
+Os sites são **da equipe**: todo usuário autorizado vê todos. Por isso o MCP não
+recorta dados por conta — ele confere **quem pode entrar**.
 
-O e-mail precisa existir em `app_users`, tabela preenchida no primeiro acesso
-autenticado ao painel.
+- **stdio:** `DASH_F2F_OWNER_EMAIL` é validado no boot. Precisa existir em
+  `app_users` (preenchida no primeiro acesso autenticado ao painel) e ser de um
+  domínio permitido (`ALLOWED_EMAIL_DOMAINS`, padrão `f2f-digital.com`). Fora
+  disso o servidor não sobe.
+- **remoto:** cada token pertence a um usuário, para dar para saber de quem é e
+  revogar um por um. Token revogado, ou de dono fora do domínio, não vê nada —
+  e o domínio é reconferido a cada uso, não só na criação do token.
+
+Isso substituiu o isolamento por dono que existia até 2026-09-21 ("a conta A não
+vê a conta B"), que deixou de ser requisito quando os sites viraram compartilhados.
+Os testes de `mcp/test/isolation.test.mjs` provam a propriedade nova.
 
 > **Como conectar em Claude Code, Claude Desktop, Cursor ou VS Code:**
 > [`docs/conectar-mcp.md`](../docs/conectar-mcp.md).
@@ -41,13 +50,14 @@ npm install
 npm run db:migrate    # cria as tabelas, inclusive app_users
 npm run db:reader     # cria a role read-only e grava DATABASE_URL_MCP no .env.local
 npm run mcp:build     # compila para mcp/dist
-npm run mcp:test      # 20 testes: isolamento, negação de escrita e handshake real
+npm run mcp:test      # 28 testes: acesso por domínio e token, negação de escrita, handshake real
 ```
 
-Depois adicione o e-mail da conta no `.env.local`:
+Depois adicione o e-mail da conta no `.env.local` — de um domínio permitido, ou o
+servidor recusa no boot:
 
 ```
-DASH_F2F_OWNER_EMAIL=voce@exemplo.com
+DASH_F2F_OWNER_EMAIL=voce@f2f-digital.com
 ```
 
 O `.mcp.json` na raiz do repo já aponta para o build e **não declara credencial**:
@@ -81,12 +91,12 @@ mcp/
 ├─ bin/dash-f2f-mcp.cjs   entrada (esconde o caminho do build)
 ├─ src/server.ts          transporte stdio
 ├─ src/env.ts             carrega o .env.local do projeto
-└─ test/                  isolamento · negação de escrita · handshake · conector remoto
+└─ test/                  acesso por domínio e token · negação de escrita · handshake · conector remoto
 
 src/lib/mcp/              compartilhado com /api/mcp
-├─ tools.ts               as 8 ferramentas
-├─ queries.ts             SQL, sempre com owner_id
-└─ db.ts                  conexão read-only + resolveOwnerId
+├─ tools.ts               as ferramentas (somente leitura)
+├─ queries.ts             SQL fixo e parametrizado; sites da equipe, sem recorte por dono
+└─ db.ts                  conexão read-only + resolveOwnerId (valida o domínio no boot)
 ```
 
 O build espelha a árvore do repo (`dist/mcp/src/…` e `dist/src/lib/…`) porque o

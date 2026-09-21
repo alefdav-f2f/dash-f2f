@@ -18,13 +18,16 @@ const EXPECTED_TOOLS = [
   'diff_scans',
   'find_plugin',
   'fleet_summary',
+  'get_recent_changes',
   'get_scan_history',
+  'get_site_health',
   'get_site_status',
   'get_site_themes',
   'get_site_users',
   'list_failing_sites',
   'list_outdated',
   'list_sites',
+  'list_unhealthy_sites',
 ];
 
 async function connect(env = undefined) {
@@ -42,7 +45,7 @@ async function connect(env = undefined) {
   return client;
 }
 
-test('servidor MCP responde ao handshake e expõe as 10 tools', async (t) => {
+test('servidor MCP responde ao handshake e expõe as 13 tools', async (t) => {
   assert.ok(process.env.DASH_F2F_OWNER_EMAIL, 'defina DASH_F2F_OWNER_EMAIL no .env.local');
   const client = await connect();
   t.after(() => client.close());
@@ -83,7 +86,7 @@ test('sobe sem env do cliente, lendo o .env.local do projeto', async (t) => {
   assert.ok(!res.isError, 'fleet_summary deveria responder mesmo sem env do cliente');
 });
 
-test('tool recusa site que não é da conta', async (t) => {
+test('tool recusa site que não está no painel', async (t) => {
   const client = await connect();
   t.after(() => client.close());
 
@@ -92,5 +95,5 @@ test('tool recusa site que não é da conta', async (t) => {
     arguments: { site_url: 'https://site-de-outra-pessoa.example' },
   });
   assert.equal(res.isError, true);
-  assert.match(res.content[0].text, /não está cadastrado nesta conta/);
+  assert.match(res.content[0].text, /não está cadastrado no painel/);
 });

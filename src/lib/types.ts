@@ -93,6 +93,7 @@ export type PluginsResponse = {
   users: WpUser[];
   settings: WpSettings | null;
   health: HealthCheck[];
+  content: ContentActivity[];
   /** Recursos que não puderam ser lidos nesta varredura, com o motivo. */
   failures: Partial<Record<InventoryResource, string>>;
   /** Mudanças de plugin desde a varredura anterior (vazio na primeira). */
@@ -166,8 +167,25 @@ export type HealthCheck = {
   badge: string;
 };
 
+/**
+ * Post ou página normalizado a partir de /wp/v2/posts ou /wp/v2/pages,
+ * ordenado por `modified` — não um log de auditoria (o WordPress core não
+ * guarda quem mudou o quê, só o estado atual; ver src/lib/wp-rest.ts).
+ */
+export type ContentActivity = {
+  id: number;
+  kind: 'post' | 'page';
+  title: string;
+  /** ISO do WordPress; é a data da última alteração do conteúdo. */
+  modified: string;
+  /** Autor registrado do conteúdo — NÃO necessariamente quem fez a última alteração. */
+  author_id: number;
+  status: string;
+  link: string;
+};
+
 /** Recursos opcionais do inventário, além de plugins. */
-export type InventoryResource = 'themes' | 'users' | 'settings' | 'health';
+export type InventoryResource = 'themes' | 'users' | 'settings' | 'health' | 'content';
 
 export type SiteInventory = {
   plugins: Plugin[];
@@ -175,6 +193,7 @@ export type SiteInventory = {
   users: WpUser[];
   settings: WpSettings | null;
   health: HealthCheck[];
+  content: ContentActivity[];
   /**
    * Recursos que não puderam ser lidos, com o motivo. Vazio = tudo leu.
    *

@@ -1,4 +1,4 @@
-// Varredura diária de todos os sites cadastrados (todos os donos).
+// Varredura diária de todos os sites cadastrados (compartilhados pela equipe).
 // Roda fora de sessão: a autenticação é o CRON_SECRET, que a Vercel envia como
 // `Authorization: Bearer <CRON_SECRET>` nas invocações de cron.
 
@@ -62,9 +62,9 @@ export async function GET(request: NextRequest) {
       }
 
       try {
-        const { plugins, themes, users, settings, health, failures } = await collectInventory(site.url, credential);
+        const { plugins, themes, users, settings, health, content, failures } = await collectInventory(site.url, credential);
         const scanId = await saveScan({ siteId: site.id, source: 'cron', plugins });
-        await saveInventoryExtras(scanId, { themes, users, settings, health });
+        await saveInventoryExtras(scanId, { themes, users, settings, health, content });
         await markCredentialResult(site.id, null);
         results.push({
           url: site.url,

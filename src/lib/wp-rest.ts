@@ -13,7 +13,7 @@ import { isPrivateHost } from './site-url';
 import { latestThemeVersions, latestVersions } from './wporg';
 import { mergePluginVersions, mergeThemeVersions } from './inventory';
 import { fetchSiteHealth } from './wp-health';
-import type { ApiErrorKind, HealthCheck, InventoryResource, Plugin, RawPlugin, RawTheme, SiteInventory, Theme, WpSettings, WpUser } from './types';
+import type { ApiErrorKind, ContentActivity, HealthCheck, InventoryResource, Plugin, RawPlugin, RawTheme, SiteInventory, Theme, WpSettings, WpUser } from './types';
 import { UNAUTHORIZED_CREDENTIAL_MESSAGE } from './types';
 
 const TIMEOUT_MS = 12_000;
@@ -227,6 +227,65 @@ export async function fetchSettings(site: string, credential: Credential): Promi
 }
 
 /**
+ * Parâmetros comuns às duas consultas de conteúdo recente.
+ * `context=edit` é o que traz `modified` (e exige capability de editor);
+ * `_fields` evita puxar `content`/`excerpt` inteiros de até 20+20 posts.
+ * NÃO usar `/revisions`: é uma chamada por post, e um site com centenas de
+ * posts estouraria o orçamento de uma varredura (ver AGENTS/plano da Task 12).
+ */
+const CONTENT_QUERY = 'context=edit&orderby=modified&order=desc&per_page=20&_fields=id,title,modified,author,status,link';
+
+function normalizeContentItem(raw: unknown, kind: ContentActivity['kind']): ContentActivity {
+  const c = (raw ?? {}) as Record<string, unknown>;
+  return {
+    id: Number(c.id ?? 0),
+    kind,
+    title: flatten(c.title),
+    modified: typeof c.modified === 'string' ? c.modified : '',
+    author_id: Number(c.author ?? 0),
+    status: typeof c.status === 'string' ? c.status : '',
+    link: typeof c.link === 'string' ? c.link : '',
+  };
+}
+
+async function fetchContentKind(
+  site: string,
+  path: string,
+  kind: ContentActivity['kind'],
+  credential: Credential,
+): Promise<ContentActivity[]> {
+  const data = await wpGet(site, `${path}?${CONTENT_QUERY}`, credential);
+  if (!Array.isArray(data)) {
+    throw new WpError('bad_payload', 502, `A resposta de ${path} não é uma lista.`);
+  }
+  return data.map((raw) => normalizeContentItem(raw, kind));
+}
+
+/**
+ * Posts e páginas modificados recentemente, mesclados e ordenados por
+ * `modified` decrescente. Duas requisições, nunca uma por post (ver
+ * CONTENT_QUERY).
+ *
+ * DECISÃO: se qualquer uma das duas falhar, a função inteira falha — não
+ * degrada devolvendo só a metade que deu certo. `collectInventory` já tem o
+ * mecanismo certo para "não deu pra ler" (`failures`, por recurso); se
+ * `fetchRecentContent` engolisse a falha de `/pages` e devolvesse só os
+ * posts, a Atividade da Task 13 mostraria "nenhuma página mudou
+ * recentemente" — um fato — quando a verdade é "não sabemos". Silêncio
+ * parcial que parece dado completo é exatamente o que este projeto evita em
+ * `failures` para temas/usuários/settings/health; falhar o recurso inteiro
+ * aqui e deixar o `attempt('content', …)` registrar o motivo é consistente
+ * com essa regra, em vez de abrir uma exceção silenciosa só para conteúdo.
+ */
+export async function fetchRecentContent(site: string, credential: Credential): Promise<ContentActivity[]> {
+  const [posts, pages] = await Promise.all([
+    fetchContentKind(site, '/wp-json/wp/v2/posts', 'post', credential),
+    fetchContentKind(site, '/wp-json/wp/v2/pages', 'page', credential),
+  ]);
+  return [...posts, ...pages].sort((a, b) => (a.modified < b.modified ? 1 : a.modified > b.modified ? -1 : 0));
+}
+
+/**
  * Inventário completo. Plugins é obrigatório: se falhar, a varredura falhou.
  * Os outros três são best-effort — um 403 em /users (falta list_users) não pode
  * derrubar a varredura inteira de plugins —, mas o motivo da falha é guardado
@@ -246,12 +305,13 @@ export async function collectInventory(site: string, credential: Credential): Pr
     }
   }
 
-  const [themes, users, settings, health] = await Promise.all([
+  const [themes, users, settings, health, content] = await Promise.all([
     attempt('themes', () => collectThemes(site, credential), [] as Theme[]),
     attempt('users', () => fetchUsers(site, credential), [] as WpUser[]),
     attempt('settings', () => fetchSettings(site, credential), null as WpSettings | null),
     attempt('health', () => fetchSiteHealth(site, credential), [] as HealthCheck[]),
+    attempt('content', () => fetchRecentContent(site, credential), [] as ContentActivity[]),
   ]);
 
-  return { plugins, themes, users, settings, health, failures };
+  return { plugins, themes, users, settings, health, content, failures };
 }

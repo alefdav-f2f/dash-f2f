@@ -29,8 +29,8 @@ export async function addSiteAction(rawUrl: string): Promise<ActionResult> {
 }
 
 export async function removeSiteAction(siteId: string): Promise<void> {
-  const user = await requireUser();
-  await removeSite(user.id, siteId);
+  await requireUser();
+  await removeSite(siteId);
   revalidatePath('/');
 }
 
@@ -71,7 +71,7 @@ export async function saveCredentialAction(
   wpUser: string,
   appPassword: string,
 ): Promise<CredentialActionResult> {
-  const user = await requireUser();
+  await requireUser();
 
   const cleanUser = wpUser.trim();
   // O WordPress mostra a Application Password em grupos de 4; aceitar com e sem
@@ -82,7 +82,7 @@ export async function saveCredentialAction(
   if (cleanPassword.length < 16) return { ok: false, error: 'Application Password parece curta demais.' };
 
   try {
-    await saveCredential(user.id, siteId, cleanUser, cleanPassword);
+    await saveCredential(siteId, cleanUser, cleanPassword);
   } catch (err) {
     // saveCredential só lança CredentialsKeyError (texto fixo sobre a env var
     // CREDENTIALS_KEY), o erro "Site não encontrado nesta conta." ou um erro
@@ -97,7 +97,7 @@ export async function saveCredentialAction(
 }
 
 export async function deleteCredentialAction(siteId: string): Promise<void> {
-  const user = await requireUser();
-  await deleteCredential(user.id, siteId);
+  await requireUser();
+  await deleteCredential(siteId);
   revalidatePath('/');
 }

@@ -339,6 +339,19 @@ td[data-col="saude-status"] .badge-unknown { margin-left: 0; }
 .chg-name { font-weight: 500; }
 .chg-ver { font-family: var(--font-code); font-size: 12px; letter-spacing: 0; color: var(--faint); }
 
+/* ── atividade de conteúdo ────────────────────────────────────────────── */
+/* Mesmo tratamento visual do aviso do changelog (linha 320): sempre visível,
+   nunca tooltip, porque é o que evita ler "Autor: Fulano" como "Fulano
+   alterou por último" — o WordPress não guarda isso fora de revisões. */
+.activity-disclaimer {
+  font-size: 12px; line-height: 18px; color: var(--body);
+  padding: 10px 18px; border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
+}
+.activity-disclaimer b { color: var(--ink); font-weight: 500; }
+.activity-link { text-decoration: none; }
+.activity-link:hover { color: var(--blue); text-decoration: underline; }
+
 /* ── estados ──────────────────────────────────────────────────────────── */
 .panel-box {
   border: 1px solid var(--line); border-radius: var(--radius-lg);
@@ -479,6 +492,20 @@ td[data-col="saude-status"] .badge-unknown { margin-left: 0; }
   content: "";
   display: inline-block; width: 5px; height: 5px; margin-left: 7px;
   border-radius: 50%; background: var(--red); vertical-align: 2px;
+}
+
+/* aba cujo recurso leu certo, mas tem algo que pede uma segunda olhada
+   (atualização pendente, checagem de saúde fora de 'good', usuários todos
+   admin...). Mesmo vocabulário visual de `.chip-fail` (ponto depois do
+   rótulo), mas --amber, não --red: --red neste app é reservado para "não
+   conseguimos ler" e para alarme (`.badge-critical`); reusar para "atenção"
+   apagaria a diferença entre "isto quebrou" e "isto merece um olhar". Texto
+   do chip fica na cor normal — só o ponto muda — e o motivo vem por
+   `title`/`aria-label` no botão, nunca só pela cor do ponto. */
+.chip-attn::after {
+  content: "";
+  display: inline-block; width: 5px; height: 5px; margin-left: 7px;
+  border-radius: 50%; background: var(--amber); vertical-align: 2px;
 }
 
 /* papéis do usuário: um badge por role (roles chega como string "a,b,c") */

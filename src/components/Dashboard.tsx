@@ -17,7 +17,7 @@ import { ApiError, fetchPlugins } from '@/lib/client-api';
 import { computeStats, type FilterKey } from '@/lib/plugins';
 import { changesByFile, type Change } from '@/lib/diff';
 import { displayUrl } from '@/lib/site-url';
-import type { ApiErrorKind, HealthCheck, InventoryResource, Plugin, Theme, WpSettings, WpUser } from '@/lib/types';
+import type { ApiErrorKind, ContentActivity, HealthCheck, InventoryResource, Plugin, Theme, WpSettings, WpUser } from '@/lib/types';
 
 type View =
   | { status: 'idle' }
@@ -30,6 +30,7 @@ type View =
       users: WpUser[];
       settings: WpSettings | null;
       health: HealthCheck[];
+      content: ContentActivity[];
       /** Recursos que não puderam ser lidos nesta varredura, com o motivo. */
       failures: Partial<Record<InventoryResource, string>>;
       fetchedAt: number;
@@ -77,6 +78,7 @@ export function Dashboard({ sites, user }: Props) {
         users: data.users,
         settings: data.settings,
         health: data.health,
+        content: data.content,
         failures: data.failures,
         fetchedAt: Date.parse(data.fetchedAt),
         changes: data.changes,
@@ -231,6 +233,7 @@ export function Dashboard({ sites, user }: Props) {
               users={view.users}
               settings={view.settings}
               health={view.health}
+              content={view.content}
               failures={view.failures}
               filter={filter}
               onFilter={setFilter}

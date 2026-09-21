@@ -58,9 +58,9 @@ export async function GET(request: NextRequest) {
     return fail(400, 'invalid_url', err instanceof InvalidSiteUrlError ? err.message : 'URL inválida.');
   }
 
-  // O site precisa ser do usuário — a lista é a fonte de verdade da posse.
-  const row = await findSite(user.id, site);
-  if (!row) return fail(404, 'not_found', 'Este site não está na sua lista.');
+  // Sites são compartilhados pela equipe — só precisa existir.
+  const row = await findSite(site);
+  if (!row) return fail(404, 'not_found', 'Este site não está cadastrado.');
 
   // Varredura anterior (para o diff) antes de gravar a nova. Varredura que
   // falhou não deixou snapshot nenhum — nada a comparar, então as quatro
@@ -118,17 +118,17 @@ export async function GET(request: NextRequest) {
     // caminho de erro — o caminho feliz não paga por ela.
     let credentialLastVerifiedAt: string | null | undefined;
     if (wpErr.kind === 'unauthorized') {
-      const status = await credentialStatus(user.id, row.id);
+      const status = await credentialStatus(row.id);
       credentialLastVerifiedAt = status?.last_verified_at ?? null;
     }
 
     return fail(wpErr.status, wpErr.kind, wpErr.message, wpErr.detail, credentialLastVerifiedAt);
   }
 
-  const { plugins, themes, users, settings, health, failures } = inventory;
+  const { plugins, themes, users, settings, health, content, failures } = inventory;
 
   const scanId = await saveScan({ siteId: row.id, source: 'manual', plugins });
-  await saveInventoryExtras(scanId, { themes, users, settings, health });
+  await saveInventoryExtras(scanId, { themes, users, settings, health, content });
 
   return NextResponse.json(
     {
@@ -140,6 +140,7 @@ export async function GET(request: NextRequest) {
       users,
       settings,
       health,
+      content,
       failures,
       changes: diffScans(plugins, previousPlugins),
       // Usuário, tema e settings compartilham um `Change` só (ver src/lib/diff.ts):

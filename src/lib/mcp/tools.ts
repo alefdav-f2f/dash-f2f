@@ -1,4 +1,4 @@
-// As 8 ferramentas do MCP, registradas uma vez e servidas pelos dois
+// As ferramentas do MCP, registradas uma vez e servidas pelos dois
 // transportes: stdio (mcp/src/server.ts) e HTTP remoto (/api/mcp).
 //
 // Somente leitura em três camadas: a role do banco só tem SELECT, as consultas
@@ -8,10 +8,30 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 
 import * as q from './queries';
-import { CHANGE_LABEL, diffScans } from '../diff';
+import { CHANGE_LABEL, diffScans, diffSettings, diffThemes, diffUsers, type Change } from '../diff';
 import { displayUrl, normalizeSiteUrl } from '../site-url';
 
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, openWorldHint: false } as const;
+
+/** Rótulo em pt-BR do status de uma checagem de Site Health. Mesmo vocabulário
+ *  da UI (ChangeLog.tsx / InventoryTabs.tsx): 'unknown' nunca vira "saudável". */
+const HEALTH_STATUS_LABEL: Record<string, string> = {
+  good: 'boa',
+  recommended: 'recomendado',
+  critical: 'crítico',
+  unknown: 'desconhecido',
+};
+
+const hasAdminRole = (roles: string) =>
+  roles.split(',').map((r) => r.trim()).includes('administrator');
+
+/** Usuário que já nasceu administrator entre duas varreduras — mesmo risco de
+ *  uma elevação, mas o `kind` do diff continua 'new'. Mesma regra da UI
+ *  (ChangeLog.tsx `isNewAdminUser`): quem decide que isso merece destaque é
+ *  quem lê o diff, não `diffUsers`. */
+function isNewAdminUser(c: Change): boolean {
+  return c.resource === 'user' && c.kind === 'new' && !!c.to && hasAdminRole(c.to);
+}
 
 /** Resposta padrão: um resumo legível + o JSON completo. */
 function reply(summary: string, data: unknown) {
@@ -37,16 +57,25 @@ type SiteLookup =
   | { ok: true; site: { id: string; url: string } };
 
 /**
- * Cria o servidor MCP já amarrado a um dono. O `ownerId` entra por parâmetro e
- * é injetado em toda query — nenhuma ferramenta aceita dono do agente.
+ * Cria o servidor MCP. Sites são compartilhados pela equipe (sql/011_shared_sites.sql):
+ * não existe mais "dono" para escopar dado nenhum, então as queries não recebem
+ * id de usuário — todo token válido enxerga o mesmo inventário completo.
+ *
+ * `accountLabel` (hoje, o e-mail de quem é dono do token/da sessão local) não
+ * filtra nada; é só texto nas `instructions` do servidor, para quem estiver
+ * olhando os logs do cliente MCP saber qual conta abriu aquela conexão. A
+ * autorização de fato — só e-mail de domínio permitido chega até aqui — já
+ * aconteceu antes: em `ownerForToken` (conector remoto) ou `resolveOwnerId`
+ * (stdio local).
  */
-export function createMcpServer(ownerId: string, accountLabel: string): McpServer {
+export function createMcpServer(accountLabel: string): McpServer {
   const server = new McpServer(
     { name: 'dash-f2f', version: '1.0.0' },
     {
       instructions:
         `Leitura do painel dash-f2f para a conta ${accountLabel}. Expõe os sites WordPress ` +
-        'monitorados e o histórico de varreduras de plugins, temas e usuários. Somente leitura: ' +
+        'monitorados (compartilhados por toda a equipe, não só por esta conta) e o histórico de ' +
+        'varreduras de plugins, temas, usuários, Site Health e mudanças recentes. Somente leitura: ' +
         'não altera nem o painel nem os sites WordPress.',
     },
   );
@@ -59,8 +88,8 @@ export function createMcpServer(ownerId: string, accountLabel: string): McpServe
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : 'URL inválida.' };
     }
-    const site = await q.findSite(ownerId, url);
-    if (!site) return { ok: false, error: `O site ${displayUrl(url)} não está cadastrado nesta conta.` };
+    const site = await q.findSite(url);
+    if (!site) return { ok: false, error: `O site ${displayUrl(url)} não está cadastrado no painel.` };
     return { ok: true, site };
   }
 
@@ -70,13 +99,13 @@ export function createMcpServer(ownerId: string, accountLabel: string): McpServe
     {
       title: 'Listar sites monitorados',
       description:
-        'Todos os sites WordPress cadastrados na conta, com o resumo da varredura mais recente de cada um (quando, se respondeu, total de plugins e quantos estão desatualizados).',
+        'Todos os sites WordPress cadastrados no painel, compartilhados por toda a equipe, com o resumo da varredura mais recente de cada um (quando, se respondeu, total de plugins e quantos estão desatualizados).',
       inputSchema: {},
       annotations: READ_ONLY,
     },
     async () => {
-      const sites = await q.listSites(ownerId);
-      if (sites.length === 0) return reply('Nenhum site cadastrado nesta conta.', []);
+      const sites = await q.listSites();
+      if (sites.length === 0) return reply('Nenhum site cadastrado no painel.', []);
 
       const lines = sites.map((s) => {
         if (!s.last_fetched_at) return `${displayUrl(s.url)} — nunca varrido`;
@@ -101,10 +130,10 @@ export function createMcpServer(ownerId: string, accountLabel: string): McpServe
       const found = await siteOrError(site_url);
       if (!found.ok) return fail(found.error);
 
-      const scan = await q.latestOkScan(ownerId, found.site.id);
+      const scan = await q.latestOkScan(found.site.id);
       if (!scan) return reply(`Nenhuma varredura bem-sucedida para ${displayUrl(found.site.url)}.`, null);
 
-      const plugins = await q.scanPlugins(ownerId, scan.id);
+      const plugins = await q.scanPlugins(scan.id);
       return reply(
         `${displayUrl(found.site.url)} em ${iso(scan.fetched_at)}: ${scan.total} plugins, ` +
           `${scan.active} ativos, ${scan.outdated} desatualizados, ${scan.inactive} inativos.`,
@@ -119,9 +148,9 @@ export function createMcpServer(ownerId: string, accountLabel: string): McpServe
     {
       title: 'Plugins desatualizados',
       description:
-        'Plugins com atualização pendente na varredura mais recente. Sem site_url, cobre todos os sites da conta.',
+        'Plugins com atualização pendente na varredura mais recente. Sem site_url, cobre todos os sites da equipe.',
       inputSchema: {
-        site_url: z.string().optional().describe('Restringe a um site; omita para varrer a conta inteira'),
+        site_url: z.string().optional().describe('Restringe a um site; omita para cobrir todos os sites da equipe'),
       },
       annotations: READ_ONLY,
     },
@@ -133,7 +162,7 @@ export function createMcpServer(ownerId: string, accountLabel: string): McpServe
         siteId = found.site.id;
       }
 
-      const rows = await q.outdatedPlugins(ownerId, siteId);
+      const rows = await q.outdatedPlugins(siteId);
       if (rows.length === 0) return reply('Nenhum plugin desatualizado.', []);
 
       const lines = rows.map(
@@ -162,7 +191,7 @@ export function createMcpServer(ownerId: string, accountLabel: string): McpServe
       const found = await siteOrError(site_url);
       if (!found.ok) return fail(found.error);
 
-      const rows = await q.scans(ownerId, found.site.id, q.clampLimit(limit, 10));
+      const rows = await q.scans(found.site.id, q.clampLimit(limit, 10));
       if (rows.length === 0) return reply(`Nenhuma varredura para ${displayUrl(found.site.url)}.`, []);
 
       const lines = rows.map((s) =>
@@ -196,7 +225,7 @@ export function createMcpServer(ownerId: string, accountLabel: string): McpServe
       let toId = to_scan_id;
 
       if (!fromId || !toId) {
-        const recent = (await q.scans(ownerId, found.site.id, q.MAX_LIMIT)).filter((s) => s.ok);
+        const recent = (await q.scans(found.site.id, q.MAX_LIMIT)).filter((s) => s.ok);
         if (recent.length < 2) {
           return reply(
             `${displayUrl(found.site.url)} tem menos de duas varreduras bem-sucedidas — nada a comparar.`,
@@ -208,11 +237,11 @@ export function createMcpServer(ownerId: string, accountLabel: string): McpServe
       }
 
       const [before, after] = await Promise.all([
-        q.scanPlugins(ownerId, fromId),
-        q.scanPlugins(ownerId, toId),
+        q.scanPlugins(fromId),
+        q.scanPlugins(toId),
       ]);
       if (after.length === 0 && before.length === 0) {
-        return fail('Varredura não encontrada nesta conta (verifique os ids).');
+        return fail('Varredura não encontrada (verifique os ids).');
       }
 
       const changes = diffScans(after, before);
@@ -246,7 +275,7 @@ export function createMcpServer(ownerId: string, accountLabel: string): McpServe
       const term = String(plugin ?? '').trim();
       if (term.length < 2) return fail('Informe pelo menos 2 caracteres.');
 
-      const rows = await q.findPlugin(ownerId, term, Boolean(only_outdated));
+      const rows = await q.findPlugin(term, Boolean(only_outdated));
       if (rows.length === 0) return reply(`Nenhum site com plugin correspondente a "${term}".`, []);
 
       const lines = rows.map(
@@ -263,14 +292,14 @@ export function createMcpServer(ownerId: string, accountLabel: string): McpServe
   server.registerTool(
     'fleet_summary',
     {
-      title: 'Panorama da conta',
+      title: 'Panorama da equipe',
       description:
         'Visão geral: quantos sites, quantos com plugin desatualizado, quantos pararam de responder, quantos nunca foram varridos, e os plugins desatualizados que mais se repetem.',
       inputSchema: {},
       annotations: READ_ONLY,
     },
     async () => {
-      const [summary, top] = await Promise.all([q.fleetSummary(ownerId), q.topOutdated(ownerId, 5)]);
+      const [summary, top] = await Promise.all([q.fleetSummary(), q.topOutdated(5)]);
       const topLine = top.length
         ? `\nMais recorrentes: ${top.map((t) => `${t.name} (${t.sites} site(s))`).join(', ')}`
         : '';
@@ -294,7 +323,7 @@ export function createMcpServer(ownerId: string, accountLabel: string): McpServe
       annotations: READ_ONLY,
     },
     async () => {
-      const rows = await q.failingSites(ownerId);
+      const rows = await q.failingSites();
       if (rows.length === 0) return reply('Todos os sites responderam na última varredura.', []);
 
       const lines = rows.map(
@@ -318,7 +347,7 @@ export function createMcpServer(ownerId: string, accountLabel: string): McpServe
     async ({ site_url }) => {
       const found = await siteOrError(site_url);
       if (!found.ok) return fail(found.error);
-      const themes = await q.latestThemes(ownerId, found.site.id);
+      const themes = await q.latestThemes(found.site.id);
       if (themes.length === 0) return reply('Nenhum tema registrado para este site.', []);
       const active = themes.find((t) => t.is_active);
       return reply(
@@ -341,12 +370,153 @@ export function createMcpServer(ownerId: string, accountLabel: string): McpServe
     async ({ site_url }) => {
       const found = await siteOrError(site_url);
       if (!found.ok) return fail(found.error);
-      const users = await q.latestUsers(ownerId, found.site.id);
+      const users = await q.latestUsers(found.site.id);
       if (users.length === 0) return reply('Nenhum usuário registrado para este site.', []);
       const admins = users.filter((u) => u.roles.split(',').includes('administrator')).length;
       return reply(
         `${users.length} usuário(s) em ${displayUrl(found.site.url)}, ${admins} com papel de administrador.`,
         users,
+      );
+    },
+  );
+
+  /* ── 11. get_site_health ─────────────────────────────────────────────── */
+  server.registerTool(
+    'get_site_health',
+    {
+      title: 'Site Health de um site',
+      description:
+        'As checagens de Site Health (o diagnóstico nativo do WordPress) da varredura bem-sucedida mais recente do site: teste, status (bom, recomendado, crítico ou desconhecido) e o rótulo que o WordPress usa. "Desconhecido" significa que a checagem não pôde ser verificada nesta varredura — nunca resuma isso como saudável.',
+      inputSchema: { site_url: z.string().describe('URL do site, ex.: https://exemplo.com') },
+      annotations: READ_ONLY,
+    },
+    async ({ site_url }) => {
+      const found = await siteOrError(site_url);
+      if (!found.ok) return fail(found.error);
+
+      const scan = await q.latestOkScan(found.site.id);
+      if (!scan) return reply(`Nenhuma varredura bem-sucedida para ${displayUrl(found.site.url)}.`, null);
+
+      const checks = await q.scanHealth(scan.id);
+      if (checks.length === 0) {
+        return reply(
+          `${displayUrl(found.site.url)} não tem resultado de Site Health nesta varredura (${iso(scan.fetched_at)}).`,
+          { site: found.site.url, fetched_at: scan.fetched_at, checks: [] },
+        );
+      }
+
+      const critical = checks.filter((c) => c.status === 'critical');
+      const unknown = checks.filter((c) => c.status === 'unknown');
+      const lines = checks.map(
+        (c) => `${HEALTH_STATUS_LABEL[c.status] ?? c.status} · ${c.label || c.test}${c.badge ? ` (${c.badge})` : ''}`,
+      );
+
+      let summary: string;
+      if (critical.length > 0) {
+        summary =
+          `${displayUrl(found.site.url)} tem ${critical.length} checagem(ns) crítica(s) em ${iso(scan.fetched_at)}: ` +
+          `${critical.map((c) => c.label || c.test).join(', ')}.\n${lines.join('\n')}`;
+      } else if (unknown.length > 0) {
+        summary =
+          `${displayUrl(found.site.url)} sem checagem crítica em ${iso(scan.fetched_at)}, mas ` +
+          `${unknown.length} não pôde ser verificada — isso não é o mesmo que saudável.\n${lines.join('\n')}`;
+      } else {
+        summary = `${displayUrl(found.site.url)} passou nas ${checks.length} checagens de Site Health em ${iso(scan.fetched_at)}.\n${lines.join('\n')}`;
+      }
+
+      return reply(summary, { site: found.site.url, fetched_at: scan.fetched_at, checks });
+    },
+  );
+
+  /* ── 12. list_unhealthy_sites ────────────────────────────────────────── */
+  server.registerTool(
+    'list_unhealthy_sites',
+    {
+      title: 'Sites com Site Health crítico',
+      description:
+        'Cross-site: todo site cuja varredura bem-sucedida mais recente tem ao menos uma checagem de Site Health crítica, com quais checagens. Não inclui sites cuja última varredura falhou por completo (sem resposta, erro de rede ou autenticação) — esses são a tool list_failing_sites; misturar as duas faria o mesmo site aparecer por dois motivos diferentes ("não conseguimos varrer" vs. "varremos e o Site Health acusou um problema").',
+      inputSchema: {},
+      annotations: READ_ONLY,
+    },
+    async () => {
+      const rows = await q.criticalHealthChecks();
+      if (rows.length === 0) return reply('Nenhum site com checagem de Site Health crítica.', []);
+
+      const bySite = new Map<string, { fetched_at: string; checks: Array<{ test: string; label: string; badge: string }> }>();
+      for (const r of rows) {
+        const entry = bySite.get(r.site_url) ?? { fetched_at: r.fetched_at, checks: [] };
+        entry.checks.push({ test: r.test, label: r.label, badge: r.badge });
+        bySite.set(r.site_url, entry);
+      }
+
+      const sites = [...bySite.entries()].map(([site_url, v]) => ({ site_url, fetched_at: v.fetched_at, checks: v.checks }));
+      const lines = sites.map(
+        (s) => `${displayUrl(s.site_url)} · ${s.checks.map((c) => c.label || c.test).join(', ')}`,
+      );
+      return reply(`${sites.length} site(s) com Site Health crítico:\n${lines.join('\n')}`, sites);
+    },
+  );
+
+  /* ── 13. get_recent_changes ──────────────────────────────────────────── */
+  server.registerTool(
+    'get_recent_changes',
+    {
+      title: 'Mudanças recentes de um site',
+      description:
+        'Compara as duas varreduras bem-sucedidas mais recentes de um site — usuários, temas e configurações — e lista o que é diferente entre as duas. Isto é detecção de mudança, não um log de auditoria: o WordPress não registra quem fez cada alteração, só o estado do site a cada varredura. Não descreva o resultado como "o usuário X fez Y"; o máximo que os dados sustentam é "isso mudou entre uma varredura e a outra". Se o site tiver menos de duas varreduras bem-sucedidas, a tool diz que não há o que comparar — isso é diferente de "nada mudou".',
+      inputSchema: { site_url: z.string().describe('URL do site, ex.: https://exemplo.com') },
+      annotations: READ_ONLY,
+    },
+    async ({ site_url }) => {
+      const found = await siteOrError(site_url);
+      if (!found.ok) return fail(found.error);
+
+      const recent = (await q.scans(found.site.id, q.MAX_LIMIT)).filter((s) => s.ok);
+      if (recent.length < 2) {
+        return reply(
+          `${displayUrl(found.site.url)} tem menos de duas varreduras bem-sucedidas — ainda não há o que comparar.`,
+          { site: found.site.url, comparable: false, changes: [] },
+        );
+      }
+
+      const [toScan, fromScan] = recent; // scans() vem da mais nova para a mais antiga
+      const [users, themes, settings, prevUsers, prevThemes, prevSettings] = await Promise.all([
+        q.scanUsers(toScan.id),
+        q.scanThemes(toScan.id),
+        q.scanSettings(toScan.id),
+        q.scanUsers(fromScan.id),
+        q.scanThemes(fromScan.id),
+        q.scanSettings(fromScan.id),
+      ]);
+
+      const changes = [
+        ...diffUsers(users, prevUsers),
+        ...diffThemes(themes, prevThemes),
+        ...diffSettings(settings, prevSettings),
+      ];
+
+      if (changes.length === 0) {
+        return reply(
+          `Nada mudou em usuários, temas ou configurações de ${displayUrl(found.site.url)} entre ${iso(fromScan.fetched_at)} e ${iso(toScan.fetched_at)}.`,
+          { site: found.site.url, comparable: true, from_scan_id: fromScan.id, to_scan_id: toScan.id, changes: [] },
+        );
+      }
+
+      // admin-elevated e usuário já criado como administrator primeiro: são o
+      // sinal de maior risco (mesmo critério de destaque de ChangeLog.tsx).
+      const priority = (c: Change) => (c.kind === 'admin-elevated' || isNewAdminUser(c) ? 0 : 1);
+      const sorted = [...changes].sort((a, b) => priority(a) - priority(b));
+
+      const lines = sorted.map((c) => {
+        const versions = c.from && c.to ? ` ${c.from} → ${c.to}` : c.to ? ` ${c.to}` : c.from ? ` ${c.from}` : '';
+        const flag = isNewAdminUser(c) ? ' (criado como administrador)' : '';
+        return `[${c.resource ?? 'plugin'}] ${CHANGE_LABEL[c.kind]}: ${c.name}${versions}${flag}`;
+      });
+
+      return reply(
+        `${changes.length} mudança(s) em ${displayUrl(found.site.url)} entre ${iso(fromScan.fetched_at)} e ${iso(toScan.fetched_at)} ` +
+          `(comparação de estado, não log de auditoria):\n${lines.join('\n')}`,
+        { site: found.site.url, comparable: true, from_scan_id: fromScan.id, to_scan_id: toScan.id, changes: sorted },
       );
     },
   );

@@ -2,9 +2,14 @@
 //
 //   https://dash-f2f.vercel.app/api/mcp?token=dashf2f_…
 //
-// O token identifica a conta: o `owner_id` sai dele e é injetado em todas as
-// consultas. Mesmas 8 ferramentas do MCP local (src/lib/mcp/tools.ts), mesma
-// garantia de somente leitura — a conexão usa a role `dash_f2f_reader`.
+// O token é pessoal (dá para atribuir e revogar por conta), mas os dados não
+// são mais escopados por dono: sites são compartilhados pela equipe inteira
+// (sql/011_shared_sites.sql), então qualquer token válido — de dono num
+// domínio permitido, não revogado — lê o inventário inteiro. `ownerForToken`
+// (src/lib/tokens.ts) é o único portão: valida o token e o domínio do dono
+// antes de este handler sequer criar o servidor MCP. Mesmas 10 ferramentas do
+// MCP local (src/lib/mcp/tools.ts), mesma garantia de somente leitura — a
+// conexão usa a role `dash_f2f_reader`.
 
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { ReaderUnavailableError } from '@/lib/mcp/db';
@@ -34,8 +39,8 @@ function unauthorized(message: string) {
 }
 
 async function handle(request: Request): Promise<Response> {
-  const owner = await ownerForToken(tokenFrom(request));
-  if (!owner) {
+  const user = await ownerForToken(tokenFrom(request));
+  if (!user) {
     return unauthorized(
       'Token ausente ou inválido. Gere um em /conectores e use a URL completa, com ?token=…',
     );
@@ -50,7 +55,7 @@ async function handle(request: Request): Promise<Response> {
       enableJsonResponse: true,
     });
 
-    const server = createMcpServer(owner, 'conector remoto');
+    const server = createMcpServer(user.email);
     await server.connect(transport);
   } catch (err) {
     if (err instanceof ReaderUnavailableError) {

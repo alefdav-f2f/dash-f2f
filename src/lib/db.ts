@@ -1,10 +1,13 @@
 import 'server-only';
 
-// Acesso ao Postgres (Neon). Tudo aqui é server-only e escopado por owner_id —
-// nenhuma query de site aceita ser chamada sem o dono.
+// Acesso ao Postgres (Neon). Tudo aqui é server-only. Sites são compartilhados
+// entre todos os usuários permitidos (mesmo domínio @f2f-digital.com): não há
+// mais escopo por dono. `sites.added_by` só registra quem adicionou o site,
+// não controla quem pode vê-lo ou geri-lo — isso é responsabilidade da
+// autenticação (`requireUser`/`currentUser`) em cada entry point.
 
 import { neon } from '@neondatabase/serverless';
-import type { HealthCheck, Plugin, SiteInventory, Theme, WpSettings, WpUser } from './types';
+import type { ContentActivity, HealthCheck, Plugin, SiteInventory, Theme, WpSettings, WpUser } from './types';
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -21,6 +24,9 @@ export type SiteWithLatest = SiteRow & {
   last_outdated: number | null;
   last_total: number | null;
   last_error_kind: string | null;
+  /** Quem adicionou o site. Pode ser null — id em `added_by` sem linha em `app_users` (pré-Task 3 ou fixture de teste). */
+  added_by_email: string | null;
+  added_by_name: string | null;
 };
 
 export type ScanRow = {
@@ -42,7 +48,8 @@ export type ScanRow = {
 /**
  * Espelha o usuário da sessão em `app_users`.
  * O Neon Auth deste projeto não expõe `neon_auth.users_sync`, então este é o
- * único caminho de e-mail → owner_id — é o que o MCP usa para escopar leitura.
+ * único caminho de e-mail → id de usuário — usado pelos tokens do MCP (que
+ * continuam por usuário, ver `tokens.ts`) e para gravar `sites.added_by`.
  */
 export async function upsertUser(user: { id: string; email: string; name?: string | null }): Promise<void> {
   await sql`
@@ -57,15 +64,17 @@ export async function upsertUser(user: { id: string; email: string; name?: strin
 
 /* ── sites ─────────────────────────────────────────────────────────────── */
 
-/** Sites do usuário + resumo da varredura mais recente de cada um. */
-export async function listSites(ownerId: string): Promise<SiteWithLatest[]> {
+/** Todos os sites da equipe + resumo da varredura mais recente de cada um. */
+export async function listSites(): Promise<SiteWithLatest[]> {
   return (await sql`
     SELECT s.id, s.url, s.label, s.created_at,
            last.fetched_at  AS last_fetched_at,
            last.ok          AS last_ok,
            last.outdated    AS last_outdated,
            last.total       AS last_total,
-           last.error_kind  AS last_error_kind
+           last.error_kind  AS last_error_kind,
+           au.email         AS added_by_email,
+           au.name          AS added_by_name
       FROM sites s
       LEFT JOIN LATERAL (
         SELECT fetched_at, ok, outdated, total, error_kind
@@ -74,39 +83,41 @@ export async function listSites(ownerId: string): Promise<SiteWithLatest[]> {
          ORDER BY fetched_at DESC
          LIMIT 1
       ) last ON true
-     WHERE s.owner_id = ${ownerId}
+      -- LEFT: added_by pode apontar para um id sem linha em app_users
+      -- (site de antes da Task 3, fixture de teste) — não pode sumir da lista.
+      LEFT JOIN app_users au ON au.id = s.added_by
      ORDER BY s.created_at
   `) as SiteWithLatest[];
 }
 
-/** Insere se não existir; devolve o site em qualquer caso. */
-export async function addSite(ownerId: string, url: string): Promise<SiteRow> {
+/** Insere se a URL ainda não existir; devolve o site em qualquer caso. */
+export async function addSite(addedBy: string, url: string): Promise<SiteRow> {
   const rows = (await sql`
-    INSERT INTO sites (owner_id, url) VALUES (${ownerId}, ${url})
-    ON CONFLICT (owner_id, url) DO UPDATE SET url = EXCLUDED.url
+    INSERT INTO sites (added_by, url) VALUES (${addedBy}, ${url})
+    ON CONFLICT (url) DO UPDATE SET url = EXCLUDED.url
     RETURNING id, url, label, created_at
   `) as SiteRow[];
   return rows[0];
 }
 
-export async function removeSite(ownerId: string, siteId: string): Promise<void> {
-  await sql`DELETE FROM sites WHERE id = ${siteId} AND owner_id = ${ownerId}`;
+export async function removeSite(siteId: string): Promise<void> {
+  await sql`DELETE FROM sites WHERE id = ${siteId}`;
 }
 
-/** Resolve o site pela URL garantindo a posse. Null quando não é do usuário. */
-export async function findSite(ownerId: string, url: string): Promise<SiteRow | null> {
+/** Resolve o site pela URL. Null quando nenhum site da equipe tem essa URL. */
+export async function findSite(url: string): Promise<SiteRow | null> {
   const rows = (await sql`
     SELECT id, url, label, created_at
-      FROM sites WHERE owner_id = ${ownerId} AND url = ${url}
+      FROM sites WHERE url = ${url}
   `) as SiteRow[];
   return rows[0] ?? null;
 }
 
-/** Todos os sites de todos os donos — só para o cron. */
-export async function listAllSites(): Promise<Array<SiteRow & { owner_id: string }>> {
+/** Todos os sites da equipe — usado pelo cron (mesma lista que `listSites`, sem o join do último scan). */
+export async function listAllSites(): Promise<Array<SiteRow & { added_by: string }>> {
   return (await sql`
-    SELECT id, owner_id, url, label, created_at FROM sites ORDER BY created_at
-  `) as Array<SiteRow & { owner_id: string }>;
+    SELECT id, added_by, url, label, created_at FROM sites ORDER BY created_at
+  `) as Array<SiteRow & { added_by: string }>;
 }
 
 /* ── scans ─────────────────────────────────────────────────────────────── */
@@ -194,7 +205,7 @@ export async function outdatedHistory(siteId: string, limit = 30): Promise<Array
 /** Snapshots dos recursos além de plugins. Chamado logo após saveScan. */
 export async function saveInventoryExtras(
   scanId: string,
-  { themes, users, settings, health }: Pick<SiteInventory, 'themes' | 'users' | 'settings' | 'health'>,
+  { themes, users, settings, health, content }: Pick<SiteInventory, 'themes' | 'users' | 'settings' | 'health' | 'content'>,
 ): Promise<void> {
   if (themes.length > 0) {
     await sql`
@@ -246,6 +257,22 @@ export async function saveInventoryExtras(
       ON CONFLICT (scan_id, test) DO NOTHING
     `;
   }
+
+  if (content.length > 0) {
+    await sql`
+      INSERT INTO scan_content (scan_id, kind, id, title, modified, author_id, status, link)
+      SELECT ${scanId}, * FROM unnest(
+        ${content.map((c) => c.kind)}::text[],
+        ${content.map((c) => c.id)}::integer[],
+        ${content.map((c) => c.title)}::text[],
+        ${content.map((c) => c.modified)}::text[],
+        ${content.map((c) => c.author_id)}::integer[],
+        ${content.map((c) => c.status)}::text[],
+        ${content.map((c) => c.link)}::text[]
+      )
+      ON CONFLICT (scan_id, kind, id) DO NOTHING
+    `;
+  }
 }
 
 export async function scanThemes(scanId: string): Promise<Theme[]> {
@@ -290,4 +317,18 @@ export async function scanHealth(scanId: string): Promise<HealthCheck[]> {
                 ELSE 4
               END, test
   `) as HealthCheck[];
+}
+
+/**
+ * Conteúdo (posts e páginas) de uma varredura, mais recentemente alterado
+ * primeiro. `modified` é texto (ver sql/012_content_activity.sql) — ORDER BY
+ * em texto ISO-like (`YYYY-MM-DDTHH:MM:SS`) ordena corretamente porque o
+ * formato é lexicográfico por construção; não precisa de cast para data.
+ */
+export async function scanContent(scanId: string): Promise<ContentActivity[]> {
+  return (await sql`
+    SELECT kind, id, title, modified, author_id, status, link
+      FROM scan_content WHERE scan_id = ${scanId}
+     ORDER BY modified DESC
+  `) as ContentActivity[];
 }

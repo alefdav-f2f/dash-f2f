@@ -21,6 +21,7 @@ const READ_TABLES = [
   'scan_users',
   'scan_settings',
   'scan_health',
+  'scan_content',
 ];
 const ENV_PATH = join(process.cwd(), '.env.local');
 

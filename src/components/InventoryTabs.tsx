@@ -13,9 +13,9 @@ import { useState } from 'react';
 import { PluginTable } from '@/components/PluginTable';
 import type { FilterKey } from '@/lib/plugins';
 import type { Change } from '@/lib/diff';
-import type { HealthCheck, HealthStatus, InventoryResource, Plugin, Theme, WpSettings, WpUser } from '@/lib/types';
+import type { ContentActivity, HealthCheck, HealthStatus, InventoryResource, Plugin, Theme, WpSettings, WpUser } from '@/lib/types';
 
-type TabKey = 'plugins' | 'themes' | 'users' | 'settings' | 'health';
+type TabKey = 'plugins' | 'themes' | 'users' | 'settings' | 'health' | 'activity';
 
 const TAB_LABEL: Record<TabKey, string> = {
   plugins: 'Plugins',
@@ -23,15 +23,7 @@ const TAB_LABEL: Record<TabKey, string> = {
   users: 'Usuários',
   settings: 'Configurações',
   health: 'Saúde',
-};
-
-/** Só os quatro recursos best-effort podem aparecer em `failures`; plugins é
- *  obrigatório — se falhar, a varredura inteira falha antes de chegar aqui. */
-const TAB_RESOURCE: Partial<Record<TabKey, InventoryResource>> = {
-  themes: 'themes',
-  users: 'users',
-  settings: 'settings',
-  health: 'health',
+  activity: 'Atividade',
 };
 
 type Props = {
@@ -40,6 +32,7 @@ type Props = {
   users: WpUser[];
   settings: WpSettings | null;
   health: HealthCheck[];
+  content: ContentActivity[];
   failures: Partial<Record<InventoryResource, string>>;
   filter: FilterKey;
   onFilter: (key: FilterKey) => void;
@@ -50,44 +43,111 @@ type Props = {
  *  'good'. 'recommended' é ação sugerida, 'critical' é alarme, 'unknown' é
  *  "não sabemos" — nenhum dos três é "está tudo bem", então os três contam.
  *  Só 'good' fica de fora. */
-function healthAttentionCount(health: HealthCheck[]): number {
-  return health.filter((h) => h.status !== 'good').length;
+function healthNeedsAttention(health: HealthCheck[]): boolean {
+  return health.some((h) => h.status !== 'good');
 }
 
-/** Quantos temas merecem os olhos de alguém: atualização pendente, ou
- *  update_source 'unknown' — mesma lógica de healthAttentionCount, "não
- *  sabemos" também não é "está tudo bem". Nenhum tema em nenhum dos dois
- *  casos → o chip fica sem número, como as outras abas calmas. */
-function themeAttentionCount(themes: Theme[]): number {
-  return themes.filter((t) => t.has_update || t.update_source === 'unknown').length;
+/** Temas que merecem os olhos de alguém: atualização pendente, ou
+ *  update_source 'unknown' — "não sabemos" também não é "está tudo bem". */
+function themeNeedsAttention(themes: Theme[]): boolean {
+  return themes.some((t) => t.has_update || t.update_source === 'unknown');
 }
 
-export function InventoryTabs({ plugins, themes, users, settings, health, failures, filter, onFilter, changes }: Props) {
+/** Mesma regra de themeNeedsAttention aplicada a plugins: atualização
+ *  pendente, ou procedência da checagem de atualização desconhecida (plugin
+ *  fora do wordpress.org, onde `has_update` não é confiável). */
+function pluginNeedsAttention(plugins: Plugin[]): boolean {
+  return plugins.some((p) => p.has_update || p.update_source === 'unknown');
+}
+
+/** Usuários: a única coisa que vale marcar aqui é "todo mundo é admin" — não
+ *  "existe 1 admin" (papel normal em qualquer site) nem "existem usuários"
+ *  (é o total, não atenção). Um site inteiro sem separação de papéis é o tipo
+ *  de coisa que vale uma segunda olhada (superfície de conta comprometida =
+ *  toda a base de usuários). Lista vazia não é "risco", é "nada para avaliar".
+ */
+function usersNeedAttention(users: WpUser[]): boolean {
+  if (users.length === 0) return false;
+  return users.every((u) => u.roles.split(',').map((r) => r.trim()).includes('administrator'));
+}
+
+export function InventoryTabs({ plugins, themes, users, settings, health, content, failures, filter, onFilter, changes }: Props) {
   const [tab, setTab] = useState<TabKey>('plugins');
 
-  /** Contagem no chip quando o recurso é uma lista; "falhou" no lugar da
-   *  contagem quando não conseguimos lê-lo. Configurações não é uma lista —
-   *  não tem uma contagem que faça sentido, então o chip fica sem número
-   *  enquanto está tudo bem, e só ganha o marcador quando falha. Saúde
-   *  também fica sem número quando as seis checagens estão 'good' — um chip
-   *  calmo para um site saudável, não "· 6" toda vez. */
-  function chipLabel(key: TabKey): string {
+  /**
+   * Estado visual de um chip — Task 14b: uma convenção só de contagem para
+   * as seis abas. O número, quando existe, é sempre o TOTAL da lista, nunca
+   * quantos itens pedem atenção — "Temas · 5" é "existem 5 temas", do mesmo
+   * jeito que "Plugins · 7" é "existem 7 plugins"; misturar os dois
+   * significados no mesmo formato era o bug que esta task resolve. "Precisa
+   * de atenção" vira um marcador separado (`.chip-attn`, um ponto âmbar — ver
+   * globals.css), nunca um segundo número.
+   *
+   * Três estados, não dois: calmo (só o total), atenção (total + marcador),
+   * e falhou (`.chip-fail`, vermelho — "não conseguimos ler", não "leu e tem
+   * problema"). `failed` sempre vence `attention` na aparência: se a leitura
+   * falhou não dá para saber se há algo para revisar, então não fingimos que
+   * sabemos.
+   *
+   * Configurações continua sem contagem (é um singleton, não uma lista) e
+   * sem marcador de atenção — só o falhou existente.
+   */
+  function chipState(key: TabKey): { label: string; failed: boolean; attention: boolean; attentionReason?: string } {
     switch (key) {
-      case 'plugins':
-        return `${TAB_LABEL.plugins} · ${plugins.length}`;
-      case 'themes': {
-        if (failures.themes) return `${TAB_LABEL.themes} · falhou`;
-        const attention = themeAttentionCount(themes);
-        return attention > 0 ? `${TAB_LABEL.themes} · ${attention}` : TAB_LABEL.themes;
+      case 'plugins': {
+        // Plugins é obrigatório: se a leitura falhar, a varredura inteira
+        // falha antes de chegar a esta tela — não há um `failures.plugins`.
+        const attention = pluginNeedsAttention(plugins);
+        return {
+          label: `${TAB_LABEL.plugins} · ${plugins.length}`,
+          failed: false,
+          attention,
+          attentionReason: attention ? 'Há plugins com atualização pendente ou de procedência desconhecida.' : undefined,
+        };
       }
-      case 'users':
-        return failures.users ? `${TAB_LABEL.users} · falhou` : `${TAB_LABEL.users} · ${users.length}`;
-      case 'settings':
-        return failures.settings ? `${TAB_LABEL.settings} · falhou` : TAB_LABEL.settings;
+      case 'themes': {
+        const failed = Boolean(failures.themes);
+        const attention = !failed && themeNeedsAttention(themes);
+        return {
+          label: failed ? `${TAB_LABEL.themes} · falhou` : `${TAB_LABEL.themes} · ${themes.length}`,
+          failed,
+          attention,
+          attentionReason: attention ? 'Há temas com atualização pendente ou de procedência desconhecida.' : undefined,
+        };
+      }
+      case 'users': {
+        const failed = Boolean(failures.users);
+        const attention = !failed && usersNeedAttention(users);
+        return {
+          label: failed ? `${TAB_LABEL.users} · falhou` : `${TAB_LABEL.users} · ${users.length}`,
+          failed,
+          attention,
+          attentionReason: attention ? 'Todos os usuários deste site são administradores.' : undefined,
+        };
+      }
+      case 'settings': {
+        const failed = Boolean(failures.settings);
+        return { label: failed ? `${TAB_LABEL.settings} · falhou` : TAB_LABEL.settings, failed, attention: false };
+      }
       case 'health': {
-        if (failures.health) return `${TAB_LABEL.health} · falhou`;
-        const attention = healthAttentionCount(health);
-        return attention > 0 ? `${TAB_LABEL.health} · ${attention}` : TAB_LABEL.health;
+        const failed = Boolean(failures.health);
+        const attention = !failed && healthNeedsAttention(health);
+        return {
+          label: failed ? `${TAB_LABEL.health} · falhou` : `${TAB_LABEL.health} · ${health.length}`,
+          failed,
+          attention,
+          attentionReason: attention ? 'Há checagens de saúde fora do estado "Boa".' : undefined,
+        };
+      }
+      case 'activity': {
+        // Sem regra de atenção natural para um item de conteúdo (ver
+        // comentário original da task 11/14) — permanece sempre calma.
+        const failed = Boolean(failures.content);
+        return {
+          label: failed ? `${TAB_LABEL.activity} · falhou` : `${TAB_LABEL.activity} · ${content.length}`,
+          failed,
+          attention: false,
+        };
       }
     }
   }
@@ -96,8 +156,7 @@ export function InventoryTabs({ plugins, themes, users, settings, health, failur
     <div className="inv">
       <div className="chips">
         {(Object.keys(TAB_LABEL) as TabKey[]).map((key) => {
-          const resource = TAB_RESOURCE[key];
-          const failed = resource ? Boolean(failures[resource]) : false;
+          const { label, failed, attention, attentionReason } = chipState(key);
           return (
             <button
               key={key}
@@ -105,11 +164,16 @@ export function InventoryTabs({ plugins, themes, users, settings, health, failur
               // Não desabilita a aba com falha: desabilitar esconderia a
               // explicação atrás de um controle inerte. A aba continua
               // clicável e mostra o motivo no lugar da tabela.
-              className={`chip${key === tab ? ' on' : ''}${failed ? ' chip-fail' : ''}`}
+              className={`chip${key === tab ? ' on' : ''}${failed ? ' chip-fail' : ''}${attention ? ' chip-attn' : ''}`}
               aria-pressed={key === tab}
+              // O marcador de atenção não pode depender só da cor do ponto:
+              // `title` (tooltip do mouse) e `aria-label` (leitor de tela)
+              // carregam a mesma explicação por texto.
+              title={attentionReason}
+              aria-label={attentionReason ? `${label}. ${attentionReason}` : undefined}
               onClick={() => setTab(key)}
             >
-              {chipLabel(key)}
+              {label}
             </button>
           );
         })}
@@ -122,6 +186,9 @@ export function InventoryTabs({ plugins, themes, users, settings, health, failur
       {tab === 'users' && <UsersPanel users={users} failure={failures.users} />}
       {tab === 'settings' && <SettingsPanel settings={settings} failure={failures.settings} />}
       {tab === 'health' && <HealthPanel health={health} failure={failures.health} />}
+      {tab === 'activity' && (
+        <ActivityPanel content={content} users={users} settings={settings} failure={failures.content} />
+      )}
     </div>
   );
 }
@@ -369,6 +436,120 @@ function HealthPanel({ health, failure }: { health: HealthCheck[]; failure?: str
               </td>
             </tr>
           ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** pt-BR para o `kind` de ContentActivity. */
+const CONTENT_KIND_LABEL: Record<ContentActivity['kind'], string> = {
+  post: 'post',
+  page: 'página',
+};
+
+/**
+ * `modified` chega do WordPress sem fuso (ver src/lib/wp-rest.ts e
+ * sql/012_content_activity.sql) — é o horário LOCAL do site, na forma
+ * `YYYY-MM-DDTHH:MM:SS`. Formatar isso com `new Date(modified)` reinterpretaria
+ * a string como UTC ou como o fuso do runtime (navegador ou servidor,
+ * dependendo de onde o componente renderiza) e inventaria um deslocamento que
+ * a API nunca informou — exatamente o erro que este painel existe para não
+ * cometer. Por isso o parse é feito com regex sobre o texto, nunca com `Date`.
+ */
+function formatSiteModified(modified: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(modified);
+  if (!m) return modified || '—';
+  const [, year, month, day, hour, minute] = m;
+  return `${day}/${month}/${year} ${hour}:${minute}`;
+}
+
+/** Resolve `author_id` contra os usuários já carregados desta varredura.
+ *  Sem correspondência (lista de usuários falhou, ou o autor não está nela)
+ *  mostra o id puro com um rótulo neutro — nunca um nome inventado. */
+function AuthorCell({ authorId, users }: { authorId: number; users: WpUser[] }) {
+  const match = users.find((u) => u.wp_user_id === authorId);
+  if (match) return <span className="pname">{match.name}</span>;
+  return <span className="eyebrow">usuário #{authorId}</span>;
+}
+
+function ActivityPanel({
+  content,
+  users,
+  settings,
+  failure,
+}: {
+  content: ContentActivity[];
+  users: WpUser[];
+  settings: WpSettings | null;
+  failure?: string;
+}) {
+  if (failure) return <FailureNotice title="Não foi possível ler a atividade de conteúdo" reason={failure} />;
+
+  return (
+    <div className="tablewrap">
+      <div className="tbar">
+        <span className="count">{content.length} {content.length === 1 ? 'item' : 'itens'}</span>
+      </div>
+
+      {/* Aviso obrigatório, sempre visível (nunca em tooltip): sem isto, "Autor:
+          Fulano" ao lado de "alterado há 2 h" lê como "Fulano alterou há 2 h",
+          o que pode ser falso — o WordPress não registra quem editou por
+          último fora de revisões, que esta varredura não lê (ver
+          src/lib/wp-rest.ts). O horário também é do próprio site, sem fuso
+          informado pela API; nunca reapresentado como UTC ou como o fuso de
+          quem está olhando. */}
+      <p className="activity-disclaimer">
+        Lista ordenada pela última alteração de cada conteúdo — não é um registro de quem editou.
+        O autor mostrado é o autor <b>registrado</b> do conteúdo, não necessariamente quem fez a
+        alteração mais recente: o WordPress não guarda essa informação fora de revisões, que esta
+        varredura não lê. O horário é o horário local do site
+        {settings?.timezone ? ` (fuso configurado no site: ${settings.timezone})` : ', sem fuso informado pela API'} —
+        não convertido para UTC nem para o fuso de quem está vendo esta tela.
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th style={{ width: '34%' }}>Título</th>
+            <th style={{ width: '12%' }}>Tipo</th>
+            <th style={{ width: '14%' }}>Status</th>
+            <th style={{ width: '20%' }}>Alterado em (horário do site)</th>
+            <th style={{ width: '20%' }}>Autor registrado</th>
+          </tr>
+        </thead>
+        <tbody>
+          {content.length === 0 ? (
+            <tr>
+              <td colSpan={5} className="table-empty">Nenhum conteúdo alterado recentemente neste site.</td>
+            </tr>
+          ) : (
+            content.map((item) => (
+              <tr key={`${item.kind}-${item.id}`}>
+                <td data-col="titulo">
+                  {item.link ? (
+                    <a className="pname activity-link" href={item.link} target="_blank" rel="noreferrer">
+                      {item.title || '(sem título)'}
+                    </a>
+                  ) : (
+                    <div className="pname">{item.title || '(sem título)'}</div>
+                  )}
+                </td>
+                <td data-col="tipo">
+                  <span className="badge">{CONTENT_KIND_LABEL[item.kind]}</span>
+                </td>
+                <td data-col="status">
+                  <span className="badge">{item.status || '—'}</span>
+                </td>
+                <td data-col="alterado">
+                  <span className="mono">{formatSiteModified(item.modified)}</span>
+                </td>
+                <td data-col="autor">
+                  <AuthorCell authorId={item.author_id} users={users} />
+                </td>
+              </tr>
+            ))
+          )}
         </tbody>
       </table>
     </div>
