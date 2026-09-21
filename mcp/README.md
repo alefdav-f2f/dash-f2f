@@ -91,12 +91,12 @@ mcp/
 ├─ bin/dash-f2f-mcp.cjs   entrada (esconde o caminho do build)
 ├─ src/server.ts          transporte stdio
 ├─ src/env.ts             carrega o .env.local do projeto
-└─ test/                  isolamento · negação de escrita · handshake · conector remoto
+└─ test/                  acesso por domínio e token · negação de escrita · handshake · conector remoto
 
 src/lib/mcp/              compartilhado com /api/mcp
-├─ tools.ts               as 8 ferramentas
-├─ queries.ts             SQL, sempre com owner_id
-└─ db.ts                  conexão read-only + resolveOwnerId
+├─ tools.ts               as ferramentas (somente leitura)
+├─ queries.ts             SQL fixo e parametrizado; sites da equipe, sem recorte por dono
+└─ db.ts                  conexão read-only + resolveOwnerId (valida o domínio no boot)
 ```
 
 O build espelha a árvore do repo (`dist/mcp/src/…` e `dist/src/lib/…`) porque o
