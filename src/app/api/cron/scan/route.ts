@@ -1,4 +1,4 @@
-// Varredura diária de todos os sites cadastrados (todos os donos).
+// Varredura diária de todos os sites cadastrados (compartilhados pela equipe).
 // Roda fora de sessão: a autenticação é o CRON_SECRET, que a Vercel envia como
 // `Authorization: Bearer <CRON_SECRET>` nas invocações de cron.
 

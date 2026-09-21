@@ -1,7 +1,10 @@
 import 'server-only';
 
-// Acesso ao Postgres (Neon). Tudo aqui é server-only e escopado por owner_id —
-// nenhuma query de site aceita ser chamada sem o dono.
+// Acesso ao Postgres (Neon). Tudo aqui é server-only. Sites são compartilhados
+// entre todos os usuários permitidos (mesmo domínio @f2f-digital.com): não há
+// mais escopo por dono. `sites.added_by` só registra quem adicionou o site,
+// não controla quem pode vê-lo ou geri-lo — isso é responsabilidade da
+// autenticação (`requireUser`/`currentUser`) em cada entry point.
 
 import { neon } from '@neondatabase/serverless';
 import type { HealthCheck, Plugin, SiteInventory, Theme, WpSettings, WpUser } from './types';
@@ -42,7 +45,8 @@ export type ScanRow = {
 /**
  * Espelha o usuário da sessão em `app_users`.
  * O Neon Auth deste projeto não expõe `neon_auth.users_sync`, então este é o
- * único caminho de e-mail → owner_id — é o que o MCP usa para escopar leitura.
+ * único caminho de e-mail → id de usuário — usado pelos tokens do MCP (que
+ * continuam por usuário, ver `tokens.ts`) e para gravar `sites.added_by`.
  */
 export async function upsertUser(user: { id: string; email: string; name?: string | null }): Promise<void> {
   await sql`
@@ -57,8 +61,8 @@ export async function upsertUser(user: { id: string; email: string; name?: strin
 
 /* ── sites ─────────────────────────────────────────────────────────────── */
 
-/** Sites do usuário + resumo da varredura mais recente de cada um. */
-export async function listSites(ownerId: string): Promise<SiteWithLatest[]> {
+/** Todos os sites da equipe + resumo da varredura mais recente de cada um. */
+export async function listSites(): Promise<SiteWithLatest[]> {
   return (await sql`
     SELECT s.id, s.url, s.label, s.created_at,
            last.fetched_at  AS last_fetched_at,
@@ -74,39 +78,38 @@ export async function listSites(ownerId: string): Promise<SiteWithLatest[]> {
          ORDER BY fetched_at DESC
          LIMIT 1
       ) last ON true
-     WHERE s.owner_id = ${ownerId}
      ORDER BY s.created_at
   `) as SiteWithLatest[];
 }
 
-/** Insere se não existir; devolve o site em qualquer caso. */
-export async function addSite(ownerId: string, url: string): Promise<SiteRow> {
+/** Insere se a URL ainda não existir; devolve o site em qualquer caso. */
+export async function addSite(addedBy: string, url: string): Promise<SiteRow> {
   const rows = (await sql`
-    INSERT INTO sites (owner_id, url) VALUES (${ownerId}, ${url})
-    ON CONFLICT (owner_id, url) DO UPDATE SET url = EXCLUDED.url
+    INSERT INTO sites (added_by, url) VALUES (${addedBy}, ${url})
+    ON CONFLICT (url) DO UPDATE SET url = EXCLUDED.url
     RETURNING id, url, label, created_at
   `) as SiteRow[];
   return rows[0];
 }
 
-export async function removeSite(ownerId: string, siteId: string): Promise<void> {
-  await sql`DELETE FROM sites WHERE id = ${siteId} AND owner_id = ${ownerId}`;
+export async function removeSite(siteId: string): Promise<void> {
+  await sql`DELETE FROM sites WHERE id = ${siteId}`;
 }
 
-/** Resolve o site pela URL garantindo a posse. Null quando não é do usuário. */
-export async function findSite(ownerId: string, url: string): Promise<SiteRow | null> {
+/** Resolve o site pela URL. Null quando nenhum site da equipe tem essa URL. */
+export async function findSite(url: string): Promise<SiteRow | null> {
   const rows = (await sql`
     SELECT id, url, label, created_at
-      FROM sites WHERE owner_id = ${ownerId} AND url = ${url}
+      FROM sites WHERE url = ${url}
   `) as SiteRow[];
   return rows[0] ?? null;
 }
 
-/** Todos os sites de todos os donos — só para o cron. */
-export async function listAllSites(): Promise<Array<SiteRow & { owner_id: string }>> {
+/** Todos os sites da equipe — usado pelo cron (mesma lista que `listSites`, sem o join do último scan). */
+export async function listAllSites(): Promise<Array<SiteRow & { added_by: string }>> {
   return (await sql`
-    SELECT id, owner_id, url, label, created_at FROM sites ORDER BY created_at
-  `) as Array<SiteRow & { owner_id: string }>;
+    SELECT id, added_by, url, label, created_at FROM sites ORDER BY created_at
+  `) as Array<SiteRow & { added_by: string }>;
 }
 
 /* ── scans ─────────────────────────────────────────────────────────────── */
