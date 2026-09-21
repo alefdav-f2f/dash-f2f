@@ -18,6 +18,7 @@
     "../src/lib/diff.ts",
     "../src/lib/plugins.ts",
     "../src/lib/site-url.ts",
-    "../src/lib/types.ts"
+    "../src/lib/types.ts",
+    "../src/lib/tokens.ts"
   ]
 }

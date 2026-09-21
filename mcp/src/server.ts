@@ -21,9 +21,12 @@ async function main() {
     );
   }
 
-  // Resolve o dono uma única vez, no boot.
-  const ownerId = await resolveOwnerId(email);
-  const server = createMcpServer(ownerId, email);
+  // Valida a conta uma única vez, no boot: precisa existir em app_users e
+  // estar num domínio permitido (resolveOwnerId recusa o resto). Sites são
+  // compartilhados pela equipe, então o id resolvido não vai para as queries
+  // — só serve para essa checagem e para ficar disponível a quem depurar.
+  await resolveOwnerId(email);
+  const server = createMcpServer(email);
 
   await server.connect(new StdioServerTransport());
   // stdout é do protocolo; log vai para stderr.

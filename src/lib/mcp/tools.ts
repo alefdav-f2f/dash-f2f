@@ -37,10 +37,18 @@ type SiteLookup =
   | { ok: true; site: { id: string; url: string } };
 
 /**
- * Cria o servidor MCP já amarrado a um dono. O `ownerId` entra por parâmetro e
- * é injetado em toda query — nenhuma ferramenta aceita dono do agente.
+ * Cria o servidor MCP. Sites são compartilhados pela equipe (sql/011_shared_sites.sql):
+ * não existe mais "dono" para escopar dado nenhum, então as queries não recebem
+ * id de usuário — todo token válido enxerga o mesmo inventário completo.
+ *
+ * `accountLabel` (hoje, o e-mail de quem é dono do token/da sessão local) não
+ * filtra nada; é só texto nas `instructions` do servidor, para quem estiver
+ * olhando os logs do cliente MCP saber qual conta abriu aquela conexão. A
+ * autorização de fato — só e-mail de domínio permitido chega até aqui — já
+ * aconteceu antes: em `ownerForToken` (conector remoto) ou `resolveOwnerId`
+ * (stdio local).
  */
-export function createMcpServer(ownerId: string, accountLabel: string): McpServer {
+export function createMcpServer(accountLabel: string): McpServer {
   const server = new McpServer(
     { name: 'dash-f2f', version: '1.0.0' },
     {
@@ -59,7 +67,7 @@ export function createMcpServer(ownerId: string, accountLabel: string): McpServe
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : 'URL inválida.' };
     }
-    const site = await q.findSite(ownerId, url);
+    const site = await q.findSite(url);
     if (!site) return { ok: false, error: `O site ${displayUrl(url)} não está cadastrado nesta conta.` };
     return { ok: true, site };
   }
@@ -75,7 +83,7 @@ export function createMcpServer(ownerId: string, accountLabel: string): McpServe
       annotations: READ_ONLY,
     },
     async () => {
-      const sites = await q.listSites(ownerId);
+      const sites = await q.listSites();
       if (sites.length === 0) return reply('Nenhum site cadastrado nesta conta.', []);
 
       const lines = sites.map((s) => {
@@ -101,10 +109,10 @@ export function createMcpServer(ownerId: string, accountLabel: string): McpServe
       const found = await siteOrError(site_url);
       if (!found.ok) return fail(found.error);
 
-      const scan = await q.latestOkScan(ownerId, found.site.id);
+      const scan = await q.latestOkScan(found.site.id);
       if (!scan) return reply(`Nenhuma varredura bem-sucedida para ${displayUrl(found.site.url)}.`, null);
 
-      const plugins = await q.scanPlugins(ownerId, scan.id);
+      const plugins = await q.scanPlugins(scan.id);
       return reply(
         `${displayUrl(found.site.url)} em ${iso(scan.fetched_at)}: ${scan.total} plugins, ` +
           `${scan.active} ativos, ${scan.outdated} desatualizados, ${scan.inactive} inativos.`,
@@ -133,7 +141,7 @@ export function createMcpServer(ownerId: string, accountLabel: string): McpServe
         siteId = found.site.id;
       }
 
-      const rows = await q.outdatedPlugins(ownerId, siteId);
+      const rows = await q.outdatedPlugins(siteId);
       if (rows.length === 0) return reply('Nenhum plugin desatualizado.', []);
 
       const lines = rows.map(
@@ -162,7 +170,7 @@ export function createMcpServer(ownerId: string, accountLabel: string): McpServe
       const found = await siteOrError(site_url);
       if (!found.ok) return fail(found.error);
 
-      const rows = await q.scans(ownerId, found.site.id, q.clampLimit(limit, 10));
+      const rows = await q.scans(found.site.id, q.clampLimit(limit, 10));
       if (rows.length === 0) return reply(`Nenhuma varredura para ${displayUrl(found.site.url)}.`, []);
 
       const lines = rows.map((s) =>
@@ -196,7 +204,7 @@ export function createMcpServer(ownerId: string, accountLabel: string): McpServe
       let toId = to_scan_id;
 
       if (!fromId || !toId) {
-        const recent = (await q.scans(ownerId, found.site.id, q.MAX_LIMIT)).filter((s) => s.ok);
+        const recent = (await q.scans(found.site.id, q.MAX_LIMIT)).filter((s) => s.ok);
         if (recent.length < 2) {
           return reply(
             `${displayUrl(found.site.url)} tem menos de duas varreduras bem-sucedidas — nada a comparar.`,
@@ -208,8 +216,8 @@ export function createMcpServer(ownerId: string, accountLabel: string): McpServe
       }
 
       const [before, after] = await Promise.all([
-        q.scanPlugins(ownerId, fromId),
-        q.scanPlugins(ownerId, toId),
+        q.scanPlugins(fromId),
+        q.scanPlugins(toId),
       ]);
       if (after.length === 0 && before.length === 0) {
         return fail('Varredura não encontrada nesta conta (verifique os ids).');
@@ -246,7 +254,7 @@ export function createMcpServer(ownerId: string, accountLabel: string): McpServe
       const term = String(plugin ?? '').trim();
       if (term.length < 2) return fail('Informe pelo menos 2 caracteres.');
 
-      const rows = await q.findPlugin(ownerId, term, Boolean(only_outdated));
+      const rows = await q.findPlugin(term, Boolean(only_outdated));
       if (rows.length === 0) return reply(`Nenhum site com plugin correspondente a "${term}".`, []);
 
       const lines = rows.map(
@@ -270,7 +278,7 @@ export function createMcpServer(ownerId: string, accountLabel: string): McpServe
       annotations: READ_ONLY,
     },
     async () => {
-      const [summary, top] = await Promise.all([q.fleetSummary(ownerId), q.topOutdated(ownerId, 5)]);
+      const [summary, top] = await Promise.all([q.fleetSummary(), q.topOutdated(5)]);
       const topLine = top.length
         ? `\nMais recorrentes: ${top.map((t) => `${t.name} (${t.sites} site(s))`).join(', ')}`
         : '';
@@ -294,7 +302,7 @@ export function createMcpServer(ownerId: string, accountLabel: string): McpServe
       annotations: READ_ONLY,
     },
     async () => {
-      const rows = await q.failingSites(ownerId);
+      const rows = await q.failingSites();
       if (rows.length === 0) return reply('Todos os sites responderam na última varredura.', []);
 
       const lines = rows.map(
@@ -318,7 +326,7 @@ export function createMcpServer(ownerId: string, accountLabel: string): McpServe
     async ({ site_url }) => {
       const found = await siteOrError(site_url);
       if (!found.ok) return fail(found.error);
-      const themes = await q.latestThemes(ownerId, found.site.id);
+      const themes = await q.latestThemes(found.site.id);
       if (themes.length === 0) return reply('Nenhum tema registrado para este site.', []);
       const active = themes.find((t) => t.is_active);
       return reply(
@@ -341,7 +349,7 @@ export function createMcpServer(ownerId: string, accountLabel: string): McpServe
     async ({ site_url }) => {
       const found = await siteOrError(site_url);
       if (!found.ok) return fail(found.error);
-      const users = await q.latestUsers(ownerId, found.site.id);
+      const users = await q.latestUsers(found.site.id);
       if (users.length === 0) return reply('Nenhum usuário registrado para este site.', []);
       const admins = users.filter((u) => u.roles.split(',').includes('administrator')).length;
       return reply(
