@@ -125,10 +125,10 @@ export async function GET(request: NextRequest) {
     return fail(wpErr.status, wpErr.kind, wpErr.message, wpErr.detail, credentialLastVerifiedAt);
   }
 
-  const { plugins, themes, users, settings, health, failures } = inventory;
+  const { plugins, themes, users, settings, health, content, failures } = inventory;
 
   const scanId = await saveScan({ siteId: row.id, source: 'manual', plugins });
-  await saveInventoryExtras(scanId, { themes, users, settings, health });
+  await saveInventoryExtras(scanId, { themes, users, settings, health, content });
 
   return NextResponse.json(
     {
@@ -140,6 +140,7 @@ export async function GET(request: NextRequest) {
       users,
       settings,
       health,
+      content,
       failures,
       changes: diffScans(plugins, previousPlugins),
       // Usuário, tema e settings compartilham um `Change` só (ver src/lib/diff.ts):

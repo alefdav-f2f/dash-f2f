@@ -7,7 +7,7 @@ import 'server-only';
 // autenticação (`requireUser`/`currentUser`) em cada entry point.
 
 import { neon } from '@neondatabase/serverless';
-import type { HealthCheck, Plugin, SiteInventory, Theme, WpSettings, WpUser } from './types';
+import type { ContentActivity, HealthCheck, Plugin, SiteInventory, Theme, WpSettings, WpUser } from './types';
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -205,7 +205,7 @@ export async function outdatedHistory(siteId: string, limit = 30): Promise<Array
 /** Snapshots dos recursos além de plugins. Chamado logo após saveScan. */
 export async function saveInventoryExtras(
   scanId: string,
-  { themes, users, settings, health }: Pick<SiteInventory, 'themes' | 'users' | 'settings' | 'health'>,
+  { themes, users, settings, health, content }: Pick<SiteInventory, 'themes' | 'users' | 'settings' | 'health' | 'content'>,
 ): Promise<void> {
   if (themes.length > 0) {
     await sql`
@@ -257,6 +257,22 @@ export async function saveInventoryExtras(
       ON CONFLICT (scan_id, test) DO NOTHING
     `;
   }
+
+  if (content.length > 0) {
+    await sql`
+      INSERT INTO scan_content (scan_id, kind, id, title, modified, author_id, status, link)
+      SELECT ${scanId}, * FROM unnest(
+        ${content.map((c) => c.kind)}::text[],
+        ${content.map((c) => c.id)}::integer[],
+        ${content.map((c) => c.title)}::text[],
+        ${content.map((c) => c.modified)}::text[],
+        ${content.map((c) => c.author_id)}::integer[],
+        ${content.map((c) => c.status)}::text[],
+        ${content.map((c) => c.link)}::text[]
+      )
+      ON CONFLICT (scan_id, kind, id) DO NOTHING
+    `;
+  }
 }
 
 export async function scanThemes(scanId: string): Promise<Theme[]> {
@@ -301,4 +317,18 @@ export async function scanHealth(scanId: string): Promise<HealthCheck[]> {
                 ELSE 4
               END, test
   `) as HealthCheck[];
+}
+
+/**
+ * Conteúdo (posts e páginas) de uma varredura, mais recentemente alterado
+ * primeiro. `modified` é texto (ver sql/012_content_activity.sql) — ORDER BY
+ * em texto ISO-like (`YYYY-MM-DDTHH:MM:SS`) ordena corretamente porque o
+ * formato é lexicográfico por construção; não precisa de cast para data.
+ */
+export async function scanContent(scanId: string): Promise<ContentActivity[]> {
+  return (await sql`
+    SELECT kind, id, title, modified, author_id, status, link
+      FROM scan_content WHERE scan_id = ${scanId}
+     ORDER BY modified DESC
+  `) as ContentActivity[];
 }

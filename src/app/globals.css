@@ -339,6 +339,19 @@ td[data-col="saude-status"] .badge-unknown { margin-left: 0; }
 .chg-name { font-weight: 500; }
 .chg-ver { font-family: var(--font-code); font-size: 12px; letter-spacing: 0; color: var(--faint); }
 
+/* ── atividade de conteúdo ────────────────────────────────────────────── */
+/* Mesmo tratamento visual do aviso do changelog (linha 320): sempre visível,
+   nunca tooltip, porque é o que evita ler "Autor: Fulano" como "Fulano
+   alterou por último" — o WordPress não guarda isso fora de revisões. */
+.activity-disclaimer {
+  font-size: 12px; line-height: 18px; color: var(--body);
+  padding: 10px 18px; border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
+}
+.activity-disclaimer b { color: var(--ink); font-weight: 500; }
+.activity-link { text-decoration: none; }
+.activity-link:hover { color: var(--blue); text-decoration: underline; }
+
 /* ── estados ──────────────────────────────────────────────────────────── */
 .panel-box {
   border: 1px solid var(--line); border-radius: var(--radius-lg);

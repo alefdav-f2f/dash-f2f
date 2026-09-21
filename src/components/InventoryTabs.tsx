@@ -13,9 +13,9 @@ import { useState } from 'react';
 import { PluginTable } from '@/components/PluginTable';
 import type { FilterKey } from '@/lib/plugins';
 import type { Change } from '@/lib/diff';
-import type { HealthCheck, HealthStatus, InventoryResource, Plugin, Theme, WpSettings, WpUser } from '@/lib/types';
+import type { ContentActivity, HealthCheck, HealthStatus, InventoryResource, Plugin, Theme, WpSettings, WpUser } from '@/lib/types';
 
-type TabKey = 'plugins' | 'themes' | 'users' | 'settings' | 'health';
+type TabKey = 'plugins' | 'themes' | 'users' | 'settings' | 'health' | 'activity';
 
 const TAB_LABEL: Record<TabKey, string> = {
   plugins: 'Plugins',
@@ -23,15 +23,17 @@ const TAB_LABEL: Record<TabKey, string> = {
   users: 'Usuários',
   settings: 'Configurações',
   health: 'Saúde',
+  activity: 'Atividade',
 };
 
-/** Só os quatro recursos best-effort podem aparecer em `failures`; plugins é
+/** Só os cinco recursos best-effort podem aparecer em `failures`; plugins é
  *  obrigatório — se falhar, a varredura inteira falha antes de chegar aqui. */
 const TAB_RESOURCE: Partial<Record<TabKey, InventoryResource>> = {
   themes: 'themes',
   users: 'users',
   settings: 'settings',
   health: 'health',
+  activity: 'content',
 };
 
 type Props = {
@@ -40,6 +42,7 @@ type Props = {
   users: WpUser[];
   settings: WpSettings | null;
   health: HealthCheck[];
+  content: ContentActivity[];
   failures: Partial<Record<InventoryResource, string>>;
   filter: FilterKey;
   onFilter: (key: FilterKey) => void;
@@ -62,7 +65,7 @@ function themeAttentionCount(themes: Theme[]): number {
   return themes.filter((t) => t.has_update || t.update_source === 'unknown').length;
 }
 
-export function InventoryTabs({ plugins, themes, users, settings, health, failures, filter, onFilter, changes }: Props) {
+export function InventoryTabs({ plugins, themes, users, settings, health, content, failures, filter, onFilter, changes }: Props) {
   const [tab, setTab] = useState<TabKey>('plugins');
 
   /** Contagem no chip quando o recurso é uma lista; "falhou" no lugar da
@@ -70,7 +73,10 @@ export function InventoryTabs({ plugins, themes, users, settings, health, failur
    *  não tem uma contagem que faça sentido, então o chip fica sem número
    *  enquanto está tudo bem, e só ganha o marcador quando falha. Saúde
    *  também fica sem número quando as seis checagens estão 'good' — um chip
-   *  calmo para um site saudável, não "· 6" toda vez. */
+   *  calmo para um site saudável, não "· 6" toda vez. Atividade segue a
+   *  convenção de Plugins/Usuários (total da lista), não a de Saúde/Temas
+   *  (só o que precisa de atenção): não há um "chamado de atenção" natural
+   *  para um item de conteúdo — a Task 14b unifica as duas convenções depois. */
   function chipLabel(key: TabKey): string {
     switch (key) {
       case 'plugins':
@@ -89,6 +95,8 @@ export function InventoryTabs({ plugins, themes, users, settings, health, failur
         const attention = healthAttentionCount(health);
         return attention > 0 ? `${TAB_LABEL.health} · ${attention}` : TAB_LABEL.health;
       }
+      case 'activity':
+        return failures.content ? `${TAB_LABEL.activity} · falhou` : `${TAB_LABEL.activity} · ${content.length}`;
     }
   }
 
@@ -122,6 +130,9 @@ export function InventoryTabs({ plugins, themes, users, settings, health, failur
       {tab === 'users' && <UsersPanel users={users} failure={failures.users} />}
       {tab === 'settings' && <SettingsPanel settings={settings} failure={failures.settings} />}
       {tab === 'health' && <HealthPanel health={health} failure={failures.health} />}
+      {tab === 'activity' && (
+        <ActivityPanel content={content} users={users} settings={settings} failure={failures.content} />
+      )}
     </div>
   );
 }
@@ -369,6 +380,120 @@ function HealthPanel({ health, failure }: { health: HealthCheck[]; failure?: str
               </td>
             </tr>
           ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** pt-BR para o `kind` de ContentActivity. */
+const CONTENT_KIND_LABEL: Record<ContentActivity['kind'], string> = {
+  post: 'post',
+  page: 'página',
+};
+
+/**
+ * `modified` chega do WordPress sem fuso (ver src/lib/wp-rest.ts e
+ * sql/012_content_activity.sql) — é o horário LOCAL do site, na forma
+ * `YYYY-MM-DDTHH:MM:SS`. Formatar isso com `new Date(modified)` reinterpretaria
+ * a string como UTC ou como o fuso do runtime (navegador ou servidor,
+ * dependendo de onde o componente renderiza) e inventaria um deslocamento que
+ * a API nunca informou — exatamente o erro que este painel existe para não
+ * cometer. Por isso o parse é feito com regex sobre o texto, nunca com `Date`.
+ */
+function formatSiteModified(modified: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(modified);
+  if (!m) return modified || '—';
+  const [, year, month, day, hour, minute] = m;
+  return `${day}/${month}/${year} ${hour}:${minute}`;
+}
+
+/** Resolve `author_id` contra os usuários já carregados desta varredura.
+ *  Sem correspondência (lista de usuários falhou, ou o autor não está nela)
+ *  mostra o id puro com um rótulo neutro — nunca um nome inventado. */
+function AuthorCell({ authorId, users }: { authorId: number; users: WpUser[] }) {
+  const match = users.find((u) => u.wp_user_id === authorId);
+  if (match) return <span className="pname">{match.name}</span>;
+  return <span className="eyebrow">usuário #{authorId}</span>;
+}
+
+function ActivityPanel({
+  content,
+  users,
+  settings,
+  failure,
+}: {
+  content: ContentActivity[];
+  users: WpUser[];
+  settings: WpSettings | null;
+  failure?: string;
+}) {
+  if (failure) return <FailureNotice title="Não foi possível ler a atividade de conteúdo" reason={failure} />;
+
+  return (
+    <div className="tablewrap">
+      <div className="tbar">
+        <span className="count">{content.length} {content.length === 1 ? 'item' : 'itens'}</span>
+      </div>
+
+      {/* Aviso obrigatório, sempre visível (nunca em tooltip): sem isto, "Autor:
+          Fulano" ao lado de "alterado há 2 h" lê como "Fulano alterou há 2 h",
+          o que pode ser falso — o WordPress não registra quem editou por
+          último fora de revisões, que esta varredura não lê (ver
+          src/lib/wp-rest.ts). O horário também é do próprio site, sem fuso
+          informado pela API; nunca reapresentado como UTC ou como o fuso de
+          quem está olhando. */}
+      <p className="activity-disclaimer">
+        Lista ordenada pela última alteração de cada conteúdo — não é um registro de quem editou.
+        O autor mostrado é o autor <b>registrado</b> do conteúdo, não necessariamente quem fez a
+        alteração mais recente: o WordPress não guarda essa informação fora de revisões, que esta
+        varredura não lê. O horário é o horário local do site
+        {settings?.timezone ? ` (fuso configurado no site: ${settings.timezone})` : ', sem fuso informado pela API'} —
+        não convertido para UTC nem para o fuso de quem está vendo esta tela.
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th style={{ width: '34%' }}>Título</th>
+            <th style={{ width: '12%' }}>Tipo</th>
+            <th style={{ width: '14%' }}>Status</th>
+            <th style={{ width: '20%' }}>Alterado em (horário do site)</th>
+            <th style={{ width: '20%' }}>Autor registrado</th>
+          </tr>
+        </thead>
+        <tbody>
+          {content.length === 0 ? (
+            <tr>
+              <td colSpan={5} className="table-empty">Nenhum conteúdo alterado recentemente neste site.</td>
+            </tr>
+          ) : (
+            content.map((item) => (
+              <tr key={`${item.kind}-${item.id}`}>
+                <td data-col="titulo">
+                  {item.link ? (
+                    <a className="pname activity-link" href={item.link} target="_blank" rel="noreferrer">
+                      {item.title || '(sem título)'}
+                    </a>
+                  ) : (
+                    <div className="pname">{item.title || '(sem título)'}</div>
+                  )}
+                </td>
+                <td data-col="tipo">
+                  <span className="badge">{CONTENT_KIND_LABEL[item.kind]}</span>
+                </td>
+                <td data-col="status">
+                  <span className="badge">{item.status || '—'}</span>
+                </td>
+                <td data-col="alterado">
+                  <span className="mono">{formatSiteModified(item.modified)}</span>
+                </td>
+                <td data-col="autor">
+                  <AuthorCell authorId={item.author_id} users={users} />
+                </td>
+              </tr>
+            ))
+          )}
         </tbody>
       </table>
     </div>
