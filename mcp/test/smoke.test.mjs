@@ -86,7 +86,7 @@ test('sobe sem env do cliente, lendo o .env.local do projeto', async (t) => {
   assert.ok(!res.isError, 'fleet_summary deveria responder mesmo sem env do cliente');
 });
 
-test('tool recusa site que não é da conta', async (t) => {
+test('tool recusa site que não está no painel', async (t) => {
   const client = await connect();
   t.after(() => client.close());
 
@@ -95,5 +95,5 @@ test('tool recusa site que não é da conta', async (t) => {
     arguments: { site_url: 'https://site-de-outra-pessoa.example' },
   });
   assert.equal(res.isError, true);
-  assert.match(res.content[0].text, /não está cadastrado nesta conta/);
+  assert.match(res.content[0].text, /não está cadastrado no painel/);
 });

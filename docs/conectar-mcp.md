@@ -1,8 +1,8 @@
 # Como conectar o MCP do dash-f2f
 
 Guia para ligar o MCP a um agente. Ele é **somente leitura**: expõe os sites
-monitorados e o histórico de varreduras da sua conta, sem tocar no painel nem nos
-WordPress.
+monitorados e o histórico de varreduras da equipe inteira (não só os que a sua
+conta cadastrou), sem tocar no painel nem nos WordPress.
 
 Há dois caminhos, e o certo depende de onde o assistente roda:
 
@@ -66,17 +66,19 @@ Depois confirme que o `.env.local` tem as duas linhas que o MCP usa:
 
 ```
 DATABASE_URL_MCP=postgres://dash_f2f_reader:…     # criada por `npm run db:reader`
-DASH_F2F_OWNER_EMAIL=voce@exemplo.com             # a conta cujos dados serão expostos
+DASH_F2F_OWNER_EMAIL=voce@f2f-digital.com         # identifica a conexão; não recorta o que as tools devolvem
 ```
 
 O e-mail precisa **já ter entrado no painel pelo menos uma vez** — é o primeiro
-acesso autenticado que cria a linha em `app_users`, e é ela que liga e-mail ao
-dono dos sites.
+acesso autenticado que cria a linha em `app_users` — e estar num domínio
+permitido (`ALLOWED_EMAIL_DOMAINS`). Os sites são da equipe inteira
+(`sql/011_shared_sites.sql`): esse e-mail só identifica quem abriu a conexão,
+não filtra o inventário que as ferramentas devolvem.
 
 Teste sem nenhum cliente:
 
 ```bash
-npm run mcp:test     # 20 testes: isolamento, negação de escrita, handshake real
+npm run mcp:test     # 28 testes: acesso por domínio e token, negação de escrita, handshake real
 ```
 
 > **Não copie a `DATABASE_URL` do app para o MCP.** Ela tem permissão de escrita.
@@ -113,7 +115,7 @@ claude mcp list
 ```
 
 Ou, dentro da sessão, `/mcp` — o `dash-f2f` deve aparecer como conectado, com as
-8 ferramentas.
+13 ferramentas.
 
 Se preferir registrar manualmente, sem usar o `.mcp.json`:
 
@@ -184,7 +186,7 @@ o `.env.local`:
   "args": ["/caminho/absoluto/mcp/dist/mcp/src/server.js"],
   "env": {
     "DATABASE_URL_MCP": "postgres://dash_f2f_reader:…",
-    "DASH_F2F_OWNER_EMAIL": "outra.pessoa@exemplo.com"
+    "DASH_F2F_OWNER_EMAIL": "outra.pessoa@f2f-digital.com"
   }
 }
 ```
@@ -205,6 +207,11 @@ Depois de conectado, peça em linguagem natural. O agente escolhe a ferramenta:
 | "algum site parou de responder?" | `list_failing_sites` |
 | "resumo geral do parque" | `fleet_summary` |
 | "histórico do site X" | `get_scan_history` |
+| "que temas estão instalados no site X?" | `get_site_themes` |
+| "quantos administradores o site X tem?" | `get_site_users` |
+| "a saúde do site X está boa?" | `get_site_health` |
+| "algum site com Site Health crítico?" | `list_unhealthy_sites` |
+| "o que mudou de usuário, tema ou configuração no site X?" | `get_recent_changes` |
 
 ---
 
@@ -213,11 +220,12 @@ Depois de conectado, peça em linguagem natural. O agente escolhe a ferramenta:
 | mensagem | causa | solução |
 |---|---|---|
 | `DATABASE_URL_MCP ausente` | `npm run db:reader` nunca rodou, ou o `.env.local` está fora da árvore do projeto | rode `npm run db:reader` e confira a linha no `.env.local` |
-| `DASH_F2F_OWNER_EMAIL ausente` | falta a linha no `.env.local` | adicione `DASH_F2F_OWNER_EMAIL=voce@exemplo.com` |
+| `DASH_F2F_OWNER_EMAIL ausente` | falta a linha no `.env.local` | adicione `DASH_F2F_OWNER_EMAIL=voce@f2f-digital.com` |
 | `Nenhum usuário com e-mail … em app_users` | a conta nunca acessou o painel | entre uma vez em `/auth/sign-in` e reconecte |
+| `O e-mail … não está num domínio permitido` | `DASH_F2F_OWNER_EMAIL` está fora de `ALLOWED_EMAIL_DOMAINS` | corrija o e-mail no `.env.local` |
 | `Cannot find module …/server.js` | build ausente ou desatualizado | `npm run mcp:build` |
 | `permission denied for table …` | a config está usando a `DATABASE_URL` do app, ou os grants sumiram | rode `npm run db:reader` de novo |
-| servidor conecta mas `list_sites` volta vazio | a conta do MCP não é a que cadastrou os sites | confira o `DASH_F2F_OWNER_EMAIL` |
+| servidor conecta mas `list_sites` volta vazio | nenhum site foi cadastrado ainda no painel (os dados são da equipe inteira, não de uma conta específica) | cadastre um site pela UI do painel |
 | conector remoto responde `401` | token revogado, incompleto ou colado sem o `?token=` | gere outro em `/conectores` |
 | conector remoto responde `503` | falta `DATABASE_URL_MCP` no ambiente de produção | adicione a variável na Vercel e faça deploy |
 
@@ -231,7 +239,10 @@ Log do servidor sai em **stderr** (stdout é do protocolo). No Claude Code,
 
 ## 5. O que o MCP pode e não pode
 
-**Pode:** ler `app_users`, `sites`, `scans` e `scan_plugins` da conta configurada.
+**Pode:** ler `app_users`, `sites`, `scans`, `scan_plugins`, `scan_themes`,
+`scan_users`, `scan_settings`, `scan_health` e `scan_content` — o inventário
+completo da **equipe inteira**, não só os sites que a conta configurada
+cadastrou (`sql/011_shared_sites.sql`).
 
 **Não pode**, por construção em três camadas:
 
@@ -239,8 +250,11 @@ Log do servidor sai em **stderr** (stdout é do protocolo). No Claude Code,
    (teste automatizado cobre `INSERT`/`UPDATE`/`DELETE` recebendo
    `permission denied`);
 2. rodar SQL do agente — as consultas são fixas e parametrizadas;
-3. ler dados de outra conta — o `owner_id` é resolvido no boot e injetado em toda
-   query; nenhuma ferramenta aceita dono como parâmetro.
+3. ler dados de fora do domínio permitido — a conta (via token remoto ou
+   `DASH_F2F_OWNER_EMAIL` local) precisa estar num domínio de
+   `ALLOWED_EMAIL_DOMAINS`, revalidado a cada uso; fora disso a conexão nem
+   abre. Isso barra quem entra, não recorta o que as ferramentas devolvem —
+   dentro do domínio permitido, todo token lê o mesmo inventário da equipe.
 
 E nada nele fala com os sites WordPress: isso é trabalho do painel, também só com
 `GET`.

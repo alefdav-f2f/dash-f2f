@@ -74,7 +74,8 @@ export function createMcpServer(accountLabel: string): McpServer {
     {
       instructions:
         `Leitura do painel dash-f2f para a conta ${accountLabel}. Expõe os sites WordPress ` +
-        'monitorados e o histórico de varreduras de plugins, temas e usuários. Somente leitura: ' +
+        'monitorados (compartilhados por toda a equipe, não só por esta conta) e o histórico de ' +
+        'varreduras de plugins, temas, usuários, Site Health e mudanças recentes. Somente leitura: ' +
         'não altera nem o painel nem os sites WordPress.',
     },
   );
@@ -88,7 +89,7 @@ export function createMcpServer(accountLabel: string): McpServer {
       return { ok: false, error: err instanceof Error ? err.message : 'URL inválida.' };
     }
     const site = await q.findSite(url);
-    if (!site) return { ok: false, error: `O site ${displayUrl(url)} não está cadastrado nesta conta.` };
+    if (!site) return { ok: false, error: `O site ${displayUrl(url)} não está cadastrado no painel.` };
     return { ok: true, site };
   }
 
@@ -98,13 +99,13 @@ export function createMcpServer(accountLabel: string): McpServer {
     {
       title: 'Listar sites monitorados',
       description:
-        'Todos os sites WordPress cadastrados na conta, com o resumo da varredura mais recente de cada um (quando, se respondeu, total de plugins e quantos estão desatualizados).',
+        'Todos os sites WordPress cadastrados no painel, compartilhados por toda a equipe, com o resumo da varredura mais recente de cada um (quando, se respondeu, total de plugins e quantos estão desatualizados).',
       inputSchema: {},
       annotations: READ_ONLY,
     },
     async () => {
       const sites = await q.listSites();
-      if (sites.length === 0) return reply('Nenhum site cadastrado nesta conta.', []);
+      if (sites.length === 0) return reply('Nenhum site cadastrado no painel.', []);
 
       const lines = sites.map((s) => {
         if (!s.last_fetched_at) return `${displayUrl(s.url)} — nunca varrido`;
@@ -147,9 +148,9 @@ export function createMcpServer(accountLabel: string): McpServer {
     {
       title: 'Plugins desatualizados',
       description:
-        'Plugins com atualização pendente na varredura mais recente. Sem site_url, cobre todos os sites da conta.',
+        'Plugins com atualização pendente na varredura mais recente. Sem site_url, cobre todos os sites da equipe.',
       inputSchema: {
-        site_url: z.string().optional().describe('Restringe a um site; omita para varrer a conta inteira'),
+        site_url: z.string().optional().describe('Restringe a um site; omita para cobrir todos os sites da equipe'),
       },
       annotations: READ_ONLY,
     },
@@ -240,7 +241,7 @@ export function createMcpServer(accountLabel: string): McpServer {
         q.scanPlugins(toId),
       ]);
       if (after.length === 0 && before.length === 0) {
-        return fail('Varredura não encontrada nesta conta (verifique os ids).');
+        return fail('Varredura não encontrada (verifique os ids).');
       }
 
       const changes = diffScans(after, before);
@@ -291,7 +292,7 @@ export function createMcpServer(accountLabel: string): McpServer {
   server.registerTool(
     'fleet_summary',
     {
-      title: 'Panorama da conta',
+      title: 'Panorama da equipe',
       description:
         'Visão geral: quantos sites, quantos com plugin desatualizado, quantos pararam de responder, quantos nunca foram varridos, e os plugins desatualizados que mais se repetem.',
       inputSchema: {},

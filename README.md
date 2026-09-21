@@ -32,6 +32,13 @@ npm run build
 npm start
 ```
 
+> **Next.js 16 só sobe um `next dev` por projeto.** Um segundo `npm run dev`
+> concorrente derruba o primeiro. E **nunca rode `npm run build` com um
+> `next dev` já no ar** — o build reescreve `.next` embaixo do dev server, que
+> passa a responder `404` até ser reiniciado. Se alguém já está com `next dev`
+> rodando neste projeto, use só `npx tsc --noEmit` e `npm test`/`npm run lint`
+> para validar; deixe `build` para quando o dev server não estiver ativo.
+
 ### Variáveis de ambiente
 
 `.env.local` (gerado por `neon init` + este projeto — nunca versionado):
@@ -144,6 +151,78 @@ grep -rn "POST\|PUT\|PATCH\|DELETE" src/app/api
 
 ---
 
+## Saúde do site
+
+O painel lê `/wp-json/wp-site-health/v1/tests/<test>` — o diagnóstico nativo
+do WordPress (Ferramentas → Saúde do site no wp-admin) — com a mesma
+Application Password usada para plugins, temas e usuários
+(`src/lib/wp-health.ts`). São seis checagens: `authorization-header`,
+`background-updates`, `dotorg-communication`, `https-status`,
+`loopback-requests`, `page-cache`.
+
+Elas rodam **sequencialmente**, não em paralelo, com até 20s por checagem e um
+orçamento total de 45s para a varredura de saúde inteira. É deliberado (D-010):
+disparar seis requisições diagnósticas de uma vez contra a produção de um
+cliente é descortesia com o servidor dele, ainda que ele aguente. O que não
+coube no orçamento vira `unknown` explícito — nunca é descartado da lista, e a
+lista nunca fica vazia mesmo quando tudo falha.
+
+`unknown` significa **não verificado**, nunca "saudável": rede caiu, resposta
+malformada, 403/404, ou o orçamento acabou antes de chegar naquele teste.
+Tratar `unknown` como "está tudo bem" é exatamente o tipo de afirmação que o
+dado não sustenta — a UI e a tool `get_site_health` do MCP nunca fazem isso.
+
+`https-status` é a checagem mais lenta das seis: o core abre uma conexão HTTPS
+de verdade para o próprio host, e num site que só serve HTTP esse handshake
+não completa — é comum ver `unknown` nesse teste especificamente em sites sem
+HTTPS, mesmo quando os outros cinco voltam `good`.
+
+## Atualização de tema
+
+Mesmo motor que já calculava `has_update` de plugin, generalizado para
+consultar a API de temas do wordpress.org
+(`https://api.wordpress.org/themes/info/1.1/`, espelho da de plugins) em vez
+da de plugins (`src/lib/wporg.ts`). O slug usado é o `stylesheet` do tema — o
+nome do diretório, que é o que o repositório usa; não existe para tema o
+problema de `plugin_uri` que existe para plugin.
+
+Um tema de agência feito sob medida, fora do repositório oficial, aparece
+marcado como "atualização desconhecida" e **nunca** como "em dia" — mesma
+regra de cobertura que já vale para plugin (acima).
+
+## Mudanças entre varreduras
+
+Cada varredura grava um snapshot; o painel compara com o snapshot anterior e
+lista o que é diferente em usuários (conta nova, removida, papel mudou),
+temas (novo, removido, versão mudou, ativação mudou) e configurações
+(`title`, `admin_email`, `url`, `timezone`, `language`, campo a campo).
+Elevação a `administrator` entre duas varreduras, e um usuário já criado como
+administrador, ganham destaque visual — é o sinal de maior risco que a
+feature existe para pegar.
+
+**Isto é detecção de mudança entre duas fotos do estado, não um log de
+auditoria.** O WordPress não registra quem fez uma alteração — só o estado do
+site em cada momento em que o painel consultou. `ChangeLog.tsx` e a tool MCP
+`get_recent_changes` dizem isso explicitamente onde mostram o diff; nada aqui
+sustenta a frase "o usuário X fez Y" — o máximo que os dados permitem afirmar
+é "isso mudou entre a varredura de ontem e a de hoje".
+
+## Atividade
+
+Uma aba lista os 20 posts e páginas mais recentemente alterados
+(`/wp/v2/posts?context=edit&orderby=modified&order=desc&per_page=20`, e o
+mesmo endpoint para `pages`) — sem usar `/revisions`, que custaria uma
+requisição por post e estouraria o orçamento da varredura num site com
+centenas deles.
+
+O autor mostrado é o autor **registrado** do conteúdo, não necessariamente
+quem fez a última edição: fora de revisões (que esta varredura não lê), o
+WordPress não guarda quem editou por último. `modified` é o horário local do
+próprio site — a API não informa fuso, e o painel nunca reapresenta esse
+valor como UTC nem converte para o fuso de quem está olhando a tela.
+
+---
+
 ## Acesso e usuários
 
 Desde que os sites passaram a ser da equipe (`sql/011_shared_sites.sql`), quem
@@ -235,10 +314,14 @@ scans (id, site_id, fetched_at, ok, error_kind, error_message,
        total, active, outdated, inactive, source)    source: manual | cron
 scan_plugins (scan_id, file, name, version, new_version, is_active, has_update,
               update_source)                          update_source: site | wporg | unknown
-scan_themes (scan_id, stylesheet, name, version, is_active)
+scan_themes (scan_id, stylesheet, name, version, is_active,
+             has_update, new_version, update_source)  update_source default 'unknown'
 scan_users (scan_id, wp_user_id, slug, name, roles)
 scan_settings (scan_id, title, description, url, admin_email, timezone, language)
-wporg_versions (slug PK, latest_version, checked_at)  cache compartilhado, dado público
+scan_health (scan_id, test, status, label, badge)     PK (scan_id, test) · status: good | recommended | critical | unknown
+scan_content (scan_id, kind, id, title, modified,
+              author_id, status, link)                PK (scan_id, kind, id) · kind: post | page
+wporg_versions (kind, slug, latest_version, checked_at) PK (kind, slug) · kind: plugin | theme
 ```
 
 Uma varredura que falhou também vira linha em `scans` — saber quando um site
@@ -246,6 +329,14 @@ parou de responder faz parte do histórico. `site_credentials` guarda no máximo
 uma credencial por site (`site_id` é a própria PK). `sites.added_by` registra
 quem cadastrou o site, mas não escopa nada — é só atribuição, e a listagem
 (`unique (url)`) é a mesma para toda a equipe.
+
+`scan_health` não guarda `description`/`actions` do WordPress: são blocos de
+HTML longos que o painel não renderiza. `scan_content.modified` fica como
+texto (não `timestamptz`): é o horário local do site, sem fuso informado pela
+API, e converter aqui exigiria inventar um fuso que ninguém declarou.
+`wporg_versions` passou de `slug PK` para `(kind, slug)` porque um mesmo slug
+pode existir nos dois espaços de nome (plugin e tema); linhas anteriores à
+migration são todas `kind = 'plugin'`.
 
 ### Status do plugin
 
@@ -260,13 +351,20 @@ Quando `update_source` é `'unknown'` (plugin fora do wordpress.org), a UI mostr
 "atualização desconhecida" em vez de tratar o plugin como em dia — ver
 [Cobertura de `has_update`](#cobertura-de-has_update).
 
+O número em destaque no topo do painel, "Plugins com atualização pendente",
+conta **só plugins** — de propósito: é o mesmo valor gravado em `scans.outdated`
+(calculado em `saveScan()`, `src/lib/db.ts`), e misturar temas ali faria a tela
+discordar do que o próprio histórico registra para aquele instante. Tema
+desatualizado ganha linha própria abaixo do número (`StatsRow.tsx`), não é
+somado nele.
+
 ### Tratamento de erros
 
 | situação | resposta | o que o usuário vê |
 |---|---|---|
 | sessão ausente | 401 | proxy redireciona para `/auth/sign-in` |
 | URL inválida | 400 `invalid_url` | erro no formulário |
-| site não é do usuário | 404 `not_found` | "Este site não está na sua lista" |
+| site não está cadastrado | 404 `not_found` | "Este site não está cadastrado" |
 | endpoint ausente | 404 `not_found` | "Endpoint não encontrado · 404" |
 | site fora do ar / timeout | 504 `network` | "Não foi possível ler este site" |
 | status ≥ 400 no site | 502 `http` | "O site respondeu com erro" |
@@ -307,11 +405,20 @@ npm run mcp:build
 npm run mcp:test      # 28 testes: negação de escrita, handshake real, escopo do token
 ```
 
-Dez ferramentas (`list_sites`, `get_site_status`, `list_outdated`,
+Treze ferramentas (`list_sites`, `get_site_status`, `list_outdated`,
 `get_scan_history`, `diff_scans`, `find_plugin`, `fleet_summary`,
-`list_failing_sites`, `get_site_themes`, `get_site_users`), lendo o inventário
-completo da equipe — a conta (via token ou `DASH_F2F_OWNER_EMAIL`) só serve
-para identificar quem está perguntando, não para filtrar o que a tool devolve.
+`list_failing_sites`, `get_site_themes`, `get_site_users`, `get_site_health`,
+`list_unhealthy_sites`, `get_recent_changes`), lendo o inventário completo da
+equipe — a conta (via token ou `DASH_F2F_OWNER_EMAIL`) só serve para
+identificar quem está perguntando, não para filtrar o que a tool devolve.
+
+`get_site_health` traz as checagens de Site Health da varredura mais recente
+de um site, e `list_unhealthy_sites` é a versão cross-site: todo site com ao
+menos uma checagem `critical` agora, numa lista só. `get_recent_changes`
+devolve o diff de usuários/temas/configurações entre as duas últimas
+varreduras — e, como no painel, a própria descrição da tool avisa que isso é
+comparação de estado, não log de auditoria, para o agente não repassar a um
+humano como se fosse.
 
 - **Conectar ao seu agente:** [`docs/conectar-mcp.md`](./docs/conectar-mcp.md)
 - **Como funciona por dentro:** [`mcp/README.md`](./mcp/README.md)
