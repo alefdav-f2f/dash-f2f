@@ -3,6 +3,7 @@ import {
   WpError,
   collectInventory,
   fetchRawPlugins,
+  fetchRecentContent,
   fetchSettings,
   fetchThemes,
   fetchUsers,
@@ -198,6 +199,88 @@ describe('recursos adicionais', () => {
   });
 });
 
+describe('fetchRecentContent', () => {
+  /** Responde por rota, para simular posts e pages independentemente. */
+  function routedFetch(map: Record<string, { status: number; body: unknown }>) {
+    return vi.fn().mockImplementation((url: string) => {
+      const hit = Object.entries(map).find(([path]) => String(url).includes(path));
+      const { status, body } = hit ? hit[1] : { status: 404, body: { code: 'rest_no_route' } };
+      return Promise.resolve(
+        new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } }),
+      );
+    });
+  }
+
+  it('consulta posts e pages com context=edit, orderby=modified, order=desc e per_page=20', async () => {
+    const fetchMock = routedFetch({
+      '/wp/v2/posts': { status: 200, body: [] },
+      '/wp/v2/pages': { status: 200, body: [] },
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await fetchRecentContent('https://exemplo.com', CRED);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const urls = fetchMock.mock.calls.map((call: unknown[]) => String(call[0]));
+    const postsUrl = urls.find((u) => u.includes('/wp/v2/posts'));
+    const pagesUrl = urls.find((u) => u.includes('/wp/v2/pages'));
+    expect(postsUrl).toBeTruthy();
+    expect(pagesUrl).toBeTruthy();
+    for (const url of [postsUrl, pagesUrl]) {
+      expect(url).toContain('orderby=modified');
+      expect(url).toContain('order=desc');
+      expect(url).toContain('context=edit');
+      expect(url).toContain('per_page=20');
+    }
+  });
+
+  it('mescla posts e pages, ordenado por modified decrescente, com o kind certo e title achatado', async () => {
+    vi.stubGlobal('fetch', routedFetch({
+      '/wp/v2/posts': {
+        status: 200,
+        body: [
+          { id: 1, title: { rendered: 'Hello world!' }, modified: '2026-09-19T10:00:00', author: 1, status: 'publish', link: 'https://exemplo.com/hello-world' },
+        ],
+      },
+      '/wp/v2/pages': {
+        status: 200,
+        body: [
+          { id: 2, title: { rendered: 'Sample Page' }, modified: '2026-09-20T10:00:00', author: 1, status: 'publish', link: 'https://exemplo.com/sample-page' },
+        ],
+      },
+    }));
+
+    const content = await fetchRecentContent('https://exemplo.com', CRED);
+
+    expect(content).toEqual([
+      { id: 2, kind: 'page', title: 'Sample Page', modified: '2026-09-20T10:00:00', author_id: 1, status: 'publish', link: 'https://exemplo.com/sample-page' },
+      { id: 1, kind: 'post', title: 'Hello world!', modified: '2026-09-19T10:00:00', author_id: 1, status: 'publish', link: 'https://exemplo.com/hello-world' },
+    ]);
+  });
+
+  it('achata title de { raw, rendered }', async () => {
+    vi.stubGlobal('fetch', routedFetch({
+      '/wp/v2/posts': {
+        status: 200,
+        body: [{ id: 1, title: { raw: 'Rascunho', rendered: 'Rascunho (renderizado)' }, modified: '2026-09-19T10:00:00', author: 1, status: 'draft', link: 'https://exemplo.com/?p=1' }],
+      },
+      '/wp/v2/pages': { status: 200, body: [] },
+    }));
+
+    const content = await fetchRecentContent('https://exemplo.com', CRED);
+    expect(content[0].title).toBe('Rascunho');
+  });
+
+  it('se pages falha mas posts funciona, o recurso inteiro falha em vez de devolver só metade', async () => {
+    vi.stubGlobal('fetch', routedFetch({
+      '/wp/v2/posts': { status: 200, body: [{ id: 1, title: 'X', modified: '2026-09-19T10:00:00', author: 1, status: 'publish', link: 'https://exemplo.com/x' }] },
+      '/wp/v2/pages': { status: 403, body: { code: 'rest_forbidden' } },
+    }));
+
+    await expect(fetchRecentContent('https://exemplo.com', CRED)).rejects.toMatchObject({ kind: 'forbidden' });
+  });
+});
+
 describe('collectInventory', () => {
   const PLUGINS = [{ plugin: 'akismet/akismet', status: 'active', name: 'Akismet', version: '5.3.1' }];
 
@@ -218,6 +301,8 @@ describe('collectInventory', () => {
       '/wp/v2/themes': { status: 200, body: [{ stylesheet: 'astra', name: 'Astra', version: '4.6.0', status: 'active' }] },
       '/wp/v2/users': { status: 403, body: { code: 'rest_user_cannot_view' } },
       '/wp/v2/settings': { status: 200, body: { title: 'Meu Site' } },
+      '/wp/v2/posts': { status: 200, body: [] },
+      '/wp/v2/pages': { status: 200, body: [] },
     }));
 
     const inventory = await collectInventory('https://exemplo.com', CRED);
@@ -231,15 +316,37 @@ describe('collectInventory', () => {
     expect(inventory.failures.themes).toBeUndefined();
   });
 
+  it('conteúdo recente entra no inventário, e falha nele não derruba os outros recursos', async () => {
+    vi.stubGlobal('fetch', routedFetch({
+      '/wp/v2/plugins': { status: 200, body: PLUGINS },
+      '/wp/v2/themes': { status: 200, body: [] },
+      '/wp/v2/users': { status: 200, body: [] },
+      '/wp/v2/settings': { status: 200, body: { title: 'X' } },
+      '/wp/v2/posts': { status: 200, body: [{ id: 1, title: 'Hello world!', modified: '2026-09-19T10:00:00', author: 1, status: 'publish', link: 'https://exemplo.com/hello-world' }] },
+      '/wp/v2/pages': { status: 403, body: { code: 'rest_forbidden' } },
+    }));
+
+    const inventory = await collectInventory('https://exemplo.com', CRED);
+
+    expect(inventory.plugins).toHaveLength(1);
+    // pages falhou -> fetchRecentContent falha inteiro -> content vazio, com motivo.
+    expect(inventory.content).toEqual([]);
+    expect(inventory.failures.content).toBeTruthy();
+    expect(inventory.failures.users).toBeUndefined();
+  });
+
   it('tudo lendo deixa failures vazio', async () => {
     vi.stubGlobal('fetch', routedFetch({
       '/wp/v2/plugins': { status: 200, body: PLUGINS },
       '/wp/v2/themes': { status: 200, body: [] },
       '/wp/v2/users': { status: 200, body: [] },
       '/wp/v2/settings': { status: 200, body: { title: 'X' } },
+      '/wp/v2/posts': { status: 200, body: [{ id: 1, title: 'Hello world!', modified: '2026-09-19T10:00:00', author: 1, status: 'publish', link: 'https://exemplo.com/hello-world' }] },
+      '/wp/v2/pages': { status: 200, body: [{ id: 2, title: 'Sample Page', modified: '2026-09-18T10:00:00', author: 1, status: 'publish', link: 'https://exemplo.com/sample-page' }] },
     }));
 
     const inventory = await collectInventory('https://exemplo.com', CRED);
     expect(inventory.failures).toEqual({});
+    expect(inventory.content).toHaveLength(2);
   });
 });
