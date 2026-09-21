@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { auth, sessionForAuthPages } from '@/lib/auth';
+import { getAllowedEmailDomains, isAllowedEmail } from '@/lib/allowed-email';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,6 +18,10 @@ export default async function SignUpPage({
   async function signUp(formData: FormData) {
     'use server';
     const email = String(formData.get('email') ?? '');
+    if (!isAllowedEmail(email)) {
+      const dominios = getAllowedEmailDomains().join(', ');
+      redirect(`/auth/sign-up?error=${encodeURIComponent(`Cadastro permitido apenas para e-mails dos domínios: ${dominios}.`)}`);
+    }
     const { error: err } = await auth.signUp.email({
       email,
       password: String(formData.get('password') ?? ''),
